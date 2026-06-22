@@ -1,0 +1,1 @@
+"""Sndcpy++ application package."""
