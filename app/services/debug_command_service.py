@@ -1,6 +1,5 @@
 import os
 import shlex
-import subprocess
 
 from PyQt6.QtCore import QObject, pyqtSignal
 

@@ -19,6 +19,7 @@ class ADBDeviceService(QObject):
         self._run_adb_command = run_adb_command
         self._task_runner = task_runner
         self._is_refreshing = False
+        self._refresh_pending = False
         self._last_device_snapshot: tuple[str, ...] | None = None
 
     def validate_paths(self):
@@ -51,6 +52,7 @@ class ADBDeviceService(QObject):
             else:
                 self.log_message.emit(f"播放器 未找到: {player_path}", "error")
 
+            self._clear_runtime_paths()
             if sndcpy_dir and os.path.isdir(sndcpy_dir):
                 ext = ".exe" if os.name == "nt" else ""
                 scrcpy_path = os.path.join(sndcpy_dir, f"scrcpy{ext}")
@@ -70,6 +72,7 @@ class ADBDeviceService(QObject):
 
     def refresh_devices(self):
         if self._is_refreshing:
+            self._refresh_pending = True
             return
         self._is_refreshing = True
 
@@ -81,8 +84,8 @@ class ADBDeviceService(QObject):
                     self.log_message.emit("设备刷新失败，等待后直接重试设备枚举...", "warning")
                     time.sleep(1.5)
                     result = self._run_adb_command(cmd, "重试刷新设备列表")
-                if result is None:
-                    self.devices_updated.emit([])
+                if result is None or result.returncode != 0:
+                    self.log_message.emit("设备刷新失败，本次结果已忽略。", "error")
                     return
                 devices = [line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line]
                 stderr_text = result.stderr or ""
@@ -93,6 +96,8 @@ class ADBDeviceService(QObject):
                         result = self._run_adb_command(cmd, f"延迟重试刷新设备列表 #{retry_index + 1}")
                         if result is None:
                             continue
+                        if result.returncode != 0:
+                            continue
                         devices = [line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line]
                         if devices:
                             break
@@ -102,6 +107,9 @@ class ADBDeviceService(QObject):
                 self.log_message.emit(f"刷新设备列表异常: {str(exc)}", "error")
             finally:
                 self._is_refreshing = False
+                if self._refresh_pending:
+                    self._refresh_pending = False
+                    self.refresh_devices()
 
         self._task_runner.start(name="adb-refresh-devices", group="adb", target=_refresh)
 
@@ -110,14 +118,17 @@ class ADBDeviceService(QObject):
             try:
                 cmd = self._cmd_manager.get_target_cmd("install_apk_direct_install_cmd", device_serial=device_serial)
                 res = self._run_adb_command(cmd, f"直接安装APK ({device_serial})")
-                if res and ("Failure" in res.stdout or "Error" in res.stdout):
+                if self._should_retry_install(res):
                     self.log_message.emit("尝试卸载旧版本并重新安装...", "warning")
                     self._run_adb_command(self._cmd_manager.get_target_cmd("uninstall_apk_cmd", device_serial=device_serial), "卸载旧版本")
                     res = self._run_adb_command(
                         self._cmd_manager.get_target_cmd("install_apk_install_cmd", device_serial=device_serial),
                         "重新安装APK",
                     )
-                success = res is not None and "Success" in res.stdout
+                success = self._install_succeeded(res)
+                if not success:
+                    error_text = self._result_text(res) or "未获取到ADB返回结果"
+                    self.log_message.emit(f"APK安装失败: {error_text}", "error")
                 self.operation_completed.emit("install", success)
             except Exception as exc:
                 self.log_message.emit(f"安装过程出错: {str(exc)}", "error")
@@ -177,3 +188,28 @@ class ADBDeviceService(QObject):
             self.log_message.emit(f"设备枚举完成: 检测到 {len(devices)} 台在线设备", "success")
         else:
             self.log_message.emit("设备枚举完成: 当前没有在线设备", "info")
+
+    def _clear_runtime_paths(self) -> None:
+        self._cmd_manager.update_variable("scrcpy_path", "")
+        self._cmd_manager.update_variable("apk_path", "")
+
+    @staticmethod
+    def _result_text(result: Optional[subprocess.CompletedProcess]) -> str:
+        if result is None:
+            return ""
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        return "\n".join(part for part in (stdout, stderr) if part)
+
+    @classmethod
+    def _install_succeeded(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+        if result is None or result.returncode != 0:
+            return False
+        return "success" in cls._result_text(result).lower()
+
+    @classmethod
+    def _should_retry_install(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+        if result is None or cls._install_succeeded(result):
+            return False
+        output = cls._result_text(result).lower()
+        return any(token in output for token in ("failure [", "install_failed", "version downgrade", "already exists"))

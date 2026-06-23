@@ -2,8 +2,9 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from app.infrastructure.config.settings_store import JsonSettingsStore
+from app.infrastructure.config.settings_store import JsonSettingsStore, get_default_settings_path
 
 
 class JsonSettingsStoreTests(unittest.TestCase):
@@ -36,6 +37,28 @@ class JsonSettingsStoreTests(unittest.TestCase):
 
             backups = [name for name in os.listdir(temp_dir) if name.startswith("settings.json.broken-")]
             self.assertEqual(len(backups), 1)
+
+    def test_save_creates_parent_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings_path = os.path.join(temp_dir, "nested", "settings.json")
+            store = JsonSettingsStore(settings_path)
+
+            store.save({"video_bitrate": 1234})
+
+            self.assertTrue(os.path.exists(settings_path))
+
+    def test_get_default_settings_path_prefers_user_profile_directory(self):
+        with patch("app.infrastructure.config.settings_store.os.name", "nt"), patch.dict(
+            "app.infrastructure.config.settings_store.os.environ",
+            {"APPDATA": "C:/Users/test/AppData/Roaming"},
+            clear=False,
+        ):
+            settings_path = get_default_settings_path()
+
+        self.assertEqual(
+            os.path.normpath(settings_path),
+            os.path.normpath("C:/Users/test/AppData/Roaming/sndcpypp/settings.json"),
+        )
 
 
 if __name__ == "__main__":

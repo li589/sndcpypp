@@ -1,4 +1,5 @@
 import os
+import shutil
 from typing import Any
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QLineEdit
@@ -9,7 +10,32 @@ from app.infrastructure.adb.path_resolver import ResolvedADBPath
 
 def get_default_player_path(app_base_dir: str) -> str:
     ext = ".exe" if os.name == "nt" else ""
-    return os.path.abspath(os.path.join(app_base_dir, "RouteAudio", f"AudioExt{ext}"))
+    candidate_names = [f"vlc{ext}", "vlc"]
+    candidate_paths: list[str] = []
+
+    for name in candidate_names:
+        resolved = shutil.which(name)
+        if resolved:
+            candidate_paths.append(resolved)
+
+    if os.name == "nt":
+        program_files_dirs = [
+            os.environ.get("ProgramFiles", ""),
+            os.environ.get("ProgramFiles(x86)", ""),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs"),
+        ]
+        for base_dir in program_files_dirs:
+            if not base_dir:
+                continue
+            candidate_paths.append(os.path.join(base_dir, "VideoLAN", "VLC", "vlc.exe"))
+
+    candidate_paths.append(os.path.join(app_base_dir, "RouteAudio", f"AudioExt{ext}"))
+
+    for candidate in candidate_paths:
+        if candidate and os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+
+    return ""
 
 
 def get_default_sndcpy_dir(app_base_dir: str) -> str:

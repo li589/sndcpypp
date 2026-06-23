@@ -233,17 +233,20 @@ class RuntimeSettingsTests(unittest.TestCase):
                 resolver_calls.append((adb_path, sndcpy_dir))
                 return SimpleNamespace(path="resolved-adb")
 
-        resolution, player_path, sndcpy_dir = resolve_runtime_paths(
-            "",
-            "",
-            "",
-            adb_path_resolver=_Resolver(),
-            app_base_dir="D:/App",
-        )
+        with patch("app.ui.runtime_settings.shutil.which", return_value="C:/VLC/vlc.exe"), patch(
+            "app.ui.runtime_settings.os.path.isfile",
+            side_effect=lambda path: path == "C:/VLC/vlc.exe",
+        ):
+            resolution, player_path, sndcpy_dir = resolve_runtime_paths(
+                "",
+                "",
+                "",
+                adb_path_resolver=_Resolver(),
+                app_base_dir="D:/App",
+            )
 
         self.assertEqual(resolution.path, "resolved-adb")
-        self.assertEqual(os.path.basename(player_path), "AudioExt.exe")
-        self.assertEqual(os.path.basename(os.path.dirname(player_path)), "RouteAudio")
+        self.assertEqual(player_path, os.path.abspath("C:/VLC/vlc.exe"))
         self.assertEqual(os.path.basename(sndcpy_dir), "Sndcpy")
         self.assertEqual(resolver_calls, [("", sndcpy_dir)])
 

@@ -22,7 +22,7 @@ from app.domain.models.operation_requests import (
     RoutingRequest,
 )
 from app.infrastructure.adb.path_resolver import ADBPathResolver, ResolvedADBPath
-from app.infrastructure.config.settings_store import JsonSettingsStore
+from app.infrastructure.config.settings_store import JsonSettingsStore, get_default_settings_path
 from app.ui.console_actions import submit_console_command
 from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
@@ -95,7 +95,7 @@ from app.ui.runtime_settings import (
     collect_ui_settings,
     resolve_runtime_paths,
 )
-from core import CoreController, FileInfo, FileType
+from core import CoreController, FileInfo
 
 
 @dataclass(slots=True)
@@ -106,24 +106,24 @@ class RecordingSessionState:
 
 
 class SndcpyGUI(QMainWindow):
-    usb_event_signal = pyqtSignal() 
+    usb_event_signal = pyqtSignal()
     LONG_RECORDING_REMINDER_SECONDS = 30 * 60
 
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose)
+        self.app_base_dir = os.path.dirname(os.path.abspath(__file__))
         configure_main_window_shell(self)
-        
+
         self.core_controller = None
-        self.settings_file = "settings.json"
+        self.settings_file = get_default_settings_path()
         self.settings_store = JsonSettingsStore(self.settings_file)
         self._pending_settings_load_warning: str | None = None
         self.settings = self.load_json_settings()
-        self.app_base_dir = os.path.dirname(os.path.abspath(__file__))
         self.adb_path_resolver = ADBPathResolver(self.app_base_dir)
         self.popups = PopupManager(self, audit_callback=self.log_to_console)
         self.auto_refresh_value = 0
-        
+
         self._is_first_startup = True
         self.is_adb_valid = False
         self.are_paths_ready = False
@@ -134,7 +134,7 @@ class SndcpyGUI(QMainWindow):
         self._last_log_time: datetime | None = None
         self._last_adb_resolution_signature: tuple[str, str, bool, str] | None = None
         self._recording_sessions: dict[str, RecordingSessionState] = {}
-        
+
         build_main_window_ui(self)
         if self._pending_settings_load_warning:
             self.log_to_console(log_settings_load_warning(self._pending_settings_load_warning), "warning")
@@ -149,15 +149,15 @@ class SndcpyGUI(QMainWindow):
         self.recording_reminder_timer = QTimer(self)
         self.recording_reminder_timer.setInterval(60_000)
         self.recording_reminder_timer.timeout.connect(self._check_long_recording_reminders)
-        
+
         self.scan_timer = QTimer(self)
         self.scan_timer.timeout.connect(self.auto_refresh_devices)
-        
+
         self.usb_debounce_timer = QTimer(self)
         self.usb_debounce_timer.setSingleShot(True)
         self.usb_debounce_timer.timeout.connect(self.manual_refresh_devices)
         self.usb_event_signal.connect(self.trigger_usb_debounce)
-        
+
         try:
             from app.infrastructure.adb.UsbMonitor import CrossPlatformUSBMonitor
             self.usb_monitor = CrossPlatformUSBMonitor()
@@ -166,12 +166,12 @@ class SndcpyGUI(QMainWindow):
         except Exception as e:
             self.usb_monitor = None
             self.log_to_console(log_usb_monitor_init_failed(str(e)), "warning")
-        
+
         self.status_bar = self.statusBar()
         self.status_label = QLabel("就绪")
         self.status_bar.addPermanentWidget(self.status_label)
         self.device_page_controller = self._create_device_page_controller()
-        
+
         QTimer.singleShot(1000, self.startup_routine)
 
     def init_tray_icon(self):
@@ -202,7 +202,7 @@ class SndcpyGUI(QMainWindow):
     def trigger_usb_debounce(self):
         self.usb_debounce_timer.start(1500)
         self.status_label.setText(status_usb_refresh_pending())
-        
+
     def startup_routine(self):
         self.log_to_console(log_initial_validation(), "info")
         self.validate_paths()
@@ -217,8 +217,10 @@ class SndcpyGUI(QMainWindow):
 
     def set_auto_refresh_value(self, value: int):
         self.auto_refresh_value = value
-        if self.auto_refresh_value: self.scan_timer.start(3000)
-        else: self.scan_timer.stop()
+        if self.auto_refresh_value:
+            self.scan_timer.start(3000)
+        else:
+            self.scan_timer.stop()
 
     def browse_file(self, target_edit: QLineEdit, file_filter: str="所有文件 (*.*)"):
         file_path = self.popups.open_file("选择文件", target_edit.text().strip(), file_filter)
@@ -238,11 +240,12 @@ class SndcpyGUI(QMainWindow):
     @pyqtSlot()
     def validate_paths(self):
         self._cooldown_buttons([self.validate_btn], 700, self._restore_validation_button)
-        if not self.core_controller: self.init_core_controller()
+        if not self.core_controller:
+            self.init_core_controller()
         self._sync_core_runtime()
         if self.core_controller:
             self.core_controller.request_validate_runtime()
-    
+
     def init_core_controller(self):
         previous_controller = self.core_controller
         if previous_controller:
@@ -507,10 +510,10 @@ class SndcpyGUI(QMainWindow):
     @pyqtSlot(list)
     def update_device_list(self, devices: list[str]):
         self.device_page_controller.update_device_list(devices)
-    
+
     def get_selected_device(self, show_warning: bool = True):
         return self.device_page_controller.get_selected_device(show_warning)
-    
+
     @pyqtSlot()
     def install_sndcpy(self):
         device = self.get_selected_device()
@@ -525,7 +528,7 @@ class SndcpyGUI(QMainWindow):
                 status_text=status_installing(device),
                 after_submit=self._show_busy_progress,
             )
-            
+
     @pyqtSlot()
     def start_routing(self):
         device = self.get_selected_device()
@@ -567,7 +570,7 @@ class SndcpyGUI(QMainWindow):
                 device_template="独立音频停止指令已发送 ({device})",
                 all_devices_text="所有独立音频停止指令已发送",
             )
-    
+
     def stop_routing(self):
         if self.core_controller:
             device = self.get_selected_device(show_warning=False)
@@ -580,14 +583,14 @@ class SndcpyGUI(QMainWindow):
                 all_devices_text="所有设备流媒体路由停止指令已发送",
                 after_submit=lambda: self.progress_bar.setVisible(False),
             )
-            
+
     @pyqtSlot()
     def start_recording_ui(self):
         device = self.rec_device_combo.currentText()
         if not device:
             self.popups.show_recording_device_required_warning()
             return
-            
+
         if not self.core_controller:
             return
 
@@ -733,7 +736,7 @@ class SndcpyGUI(QMainWindow):
             ),
         )
 
-    @pyqtSlot(str, str, int) 
+    @pyqtSlot(str, str, int)
     def handle_file_progress(self, status: str, msg: str, percent: int):
         self.status_label.setText(msg)
         if status == "start":
@@ -748,7 +751,7 @@ class SndcpyGUI(QMainWindow):
             # 若传输成功，静默刷新当前列表以展现最新文件
             if status == "done":
                 QTimer.singleShot(500, self.refresh_file_list)
-    
+
     @pyqtSlot()
     def go_up_dir(self):
         self.file_page_controller.go_up_dir()
@@ -763,7 +766,7 @@ class SndcpyGUI(QMainWindow):
         else:
             self.file_table.setRowCount(0)
             self.file_status_label.setText(file_status_read_failed())
-    
+
     @pyqtSlot(str, str, bool)
     def handle_symlink_resolved(self, device_serial: str, name: str, is_dir: bool):
         if device_serial != self.file_device_combo.currentText():
@@ -773,13 +776,13 @@ class SndcpyGUI(QMainWindow):
 
     def _populate_file_table(self, file_list: list):
         populate_file_table(self.file_table, self.file_status_label, file_list)
-    
+
     def on_file_table_double_clicked(self, item: QTableWidgetItem):
         self.file_page_controller.handle_table_double_click(item)
-    
+
     def show_file_table_menu(self, pos):
         self.file_page_controller.show_file_table_menu(pos)
-    
+
     def download_file_item(self, fi: FileInfo):
         self.file_page_controller.download_file_item(fi)
 
@@ -792,7 +795,7 @@ class SndcpyGUI(QMainWindow):
                 submit=self.core_controller.request_restart_adb,
                 restart=True,
             )
-            
+
     @pyqtSlot()
     def kill_adb_service(self):
         if self.core_controller:
@@ -802,12 +805,13 @@ class SndcpyGUI(QMainWindow):
                 submit=self.core_controller.request_force_kill_adb,
                 restart=False,
             )
-            
+
     @pyqtSlot(str)
     def handle_player_exit(self, device_serial: str):
         if self.popups.confirm_restart_audio_route(device_serial):
-            if self.core_controller: self.core_controller.request_start_audio_route(device_serial)
-            
+            if self.core_controller:
+                self.core_controller.request_start_audio_route(device_serial)
+
     def execute_custom_command(self):
         if self.core_controller is None:
             return
@@ -842,11 +846,13 @@ class SndcpyGUI(QMainWindow):
         self.console_output.moveCursor(QTextCursor.MoveOperation.End)
         self.console_output.insertHtml(html_message)
         self.console_output.moveCursor(QTextCursor.MoveOperation.End)
-        
+
     @pyqtSlot(str)
     def back_to_default(self, setting: str):
-        if setting == "video_bit": self.video_bitrate.setValue(8000)
-        if setting == "audio_bit": self.audio_bitrate.setValue(192)
+        if setting == "video_bit":
+            self.video_bitrate.setValue(8000)
+        if setting == "audio_bit":
+            self.audio_bitrate.setValue(192)
 
     @pyqtSlot(str, bool)
     def handle_operation_complete(self, operation: str, success: bool):
@@ -862,7 +868,7 @@ class SndcpyGUI(QMainWindow):
         settings = self.settings_store.load()
         self._pending_settings_load_warning = self.settings_store.last_load_warning
         return settings
-        
+
     def save_settings(self):
         settings = collect_ui_settings(self, self.settings)
         try:
@@ -870,14 +876,14 @@ class SndcpyGUI(QMainWindow):
             self.settings.update(settings)
         except Exception as e:
             self.log_to_console(log_settings_save_failed(str(e)), "error")
-            
+
     def load_settings(self):
         apply_ui_settings(self, self.settings)
-    
+
     def closeEvent(self, event):
         if not getattr(self, "force_quit", False):
             res = self.popups.confirm_exit_action()
-            
+
             if res == ExitAction.HIDE_TO_TRAY:
                 self.close_only_action()
                 event.ignore()
@@ -896,16 +902,16 @@ class SndcpyGUI(QMainWindow):
             self.core_controller.request_shutdown()
         if hasattr(self, 'scan_timer') and self.scan_timer.isActive():
             self.scan_timer.stop()
-            
+
         if hasattr(self, 'tray_icon'):
             self.tray_icon.hide()
-            
+
         event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    
+
     window = SndcpyGUI()
     window.show()
     sys.exit(app.exec())

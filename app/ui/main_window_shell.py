@@ -1,3 +1,4 @@
+import os
 import sys
 
 from PyQt6.QtCore import Qt
@@ -10,7 +11,7 @@ from app.ui.message_templates import tray_hidden_message, tray_hidden_title
 
 def init_tray_icon(window) -> None:
     window.tray_icon = QSystemTrayIcon(window)
-    window.tray_icon.setIcon(QIcon("logo\\ui_logo.png"))
+    window.tray_icon.setIcon(QIcon(_resolve_logo_path(window)))
     window.tray_icon.setContextMenu(
         build_tray_menu(
             window,
@@ -122,3 +123,8 @@ def is_foreground_fullscreen(window) -> bool:
 def force_exit(window) -> None:
     window.force_quit = True
     window.close()
+
+
+def _resolve_logo_path(window) -> str:
+    base_dir = getattr(window, "app_base_dir", os.path.abspath("."))
+    return os.path.join(base_dir, "logo", "ui_logo.png")

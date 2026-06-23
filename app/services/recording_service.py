@@ -31,6 +31,12 @@ class RecordingService(QObject):
         self._start_audio_route = start_audio_route
         self._stop_audio = stop_audio
 
+    def _mark_intentional_record_stop(self, device_serial: str) -> None:
+        reg = self._process_registry.ensure(device_serial)
+        stop_markers = reg.setdefault("intentional_record_stop_pids", set())
+        for proc in reg.get("record", []):
+            stop_markers.add(proc.pid)
+
     def start_recording(
         self,
         device_serial: str,
@@ -43,6 +49,7 @@ class RecordingService(QObject):
         def _rec():
             lock = self._process_registry.ensure(device_serial)["lock"]
             with lock:
+                self._mark_intentional_record_stop(device_serial)
                 self._process_supervisor.kill_group(device_serial, "record")
                 self.log_message.emit(f"开始录制: {save_path} ({device_serial})", "command")
 
@@ -104,10 +111,22 @@ class RecordingService(QObject):
 
                     def _monitor_and_restore():
                         proc.wait()
+                        reg = self._process_registry.ensure(device_serial)
+                        stop_markers = reg.setdefault("intentional_record_stop_pids", set())
+                        was_intentionally_stopped = proc.pid in stop_markers
+                        stop_markers.discard(proc.pid)
+                        return_code = proc.poll()
                         self._process_supervisor.remove_if_present(device_serial, "record", proc)
-                        self.recording_state_changed.emit(
-                            RecordingStateEvent(RecordingState.STOPPED, device_serial, save_path)
-                        )
+                        if return_code == 0 or was_intentionally_stopped:
+                            self.recording_state_changed.emit(
+                                RecordingStateEvent(RecordingState.STOPPED, device_serial, save_path)
+                            )
+                        else:
+                            error_text = f"录制进程异常退出，返回码: {return_code}"
+                            self.log_message.emit(error_text, "error")
+                            self.recording_state_changed.emit(
+                                RecordingStateEvent(RecordingState.FAILED, device_serial, error_text)
+                            )
                         if audio_was_running:
                             self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
                             self._start_audio_route(device_serial, port=28200)
@@ -132,9 +151,11 @@ class RecordingService(QObject):
             if device_serial is None:
                 for ds in list(self._process_registry.keys()):
                     with self._process_registry.ensure(ds)["lock"]:
+                        self._mark_intentional_record_stop(ds)
                         self._process_supervisor.kill_group(ds, "record")
             else:
                 with self._process_registry.ensure(device_serial)["lock"]:
+                    self._mark_intentional_record_stop(device_serial)
                     self._process_supervisor.kill_group(device_serial, "record")
             self.log_message.emit("录制已结束保存 (等待后台封包完成)", "success")
 

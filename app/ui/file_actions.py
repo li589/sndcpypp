@@ -77,3 +77,4 @@ def submit_upload_requests(
 
         log_to_console(log_upload_preparing(target_name, rename_to), "info")
         request_push(path, rename_to)
+        existing_names.add(rename_to or target_name)

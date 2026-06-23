@@ -1,3 +1,5 @@
+import os
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QProgressBar, QSplitter, QTabWidget, QVBoxLayout, QWidget
@@ -11,7 +13,7 @@ from app.ui.widgets import AutoExpandTextEdit, DragDropTableWidget, RefreshDevic
 
 def configure_main_window_shell(window) -> None:
     window.setWindowTitle("Android音画路由控制中心")
-    window.setWindowIcon(QIcon("logo\\ui_logo.png"))
+    window.setWindowIcon(QIcon(_resolve_logo_path(window)))
     window.setMinimumSize(540, 720)
 
 
@@ -186,3 +188,8 @@ def _bind_console_page(window) -> None:
     window.device_combo = page.device_combo
     window.cmd_input = page.cmd_input
     window.send_cmd_btn = page.send_cmd_btn
+
+
+def _resolve_logo_path(window) -> str:
+    base_dir = getattr(window, "app_base_dir", os.path.abspath("."))
+    return os.path.join(base_dir, "logo", "ui_logo.png")

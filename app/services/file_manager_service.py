@@ -237,7 +237,7 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-resolve-symlinks", group="files", target=_run_worker)
 
-    def _run_transfer_with_progress(self, device_serial: str, cmd: list, desc: str) -> bool:
+    def _run_transfer_with_progress(self, device_serial: str, cmd: list, desc: str, *, emit_done: bool = True) -> bool:
         self.file_transfer_progress.emit("start", f"正在{desc}...", 0)
         try:
             flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -269,7 +269,8 @@ class FileManagerService(QObject):
             self._process_supervisor.remove_if_present(device_serial, "transfer", proc)
 
             if proc.returncode == 0:
-                self.file_transfer_progress.emit("done", f"{desc} 完成", 100)
+                if emit_done:
+                    self.file_transfer_progress.emit("done", f"{desc} 完成", 100)
                 return True
             err = buffer.strip() or "目标路径无效、断开或【无权限(如Android/data目录)】"
             self.file_transfer_progress.emit("error", f"{desc} 失败: {err}", 0)
@@ -299,7 +300,12 @@ class FileManagerService(QObject):
         )
 
         def _pull_task():
-            success = self._run_transfer_with_progress(device_serial, cmd, f"下载 {target_name}")
+            success = self._run_transfer_with_progress(
+                device_serial,
+                cmd,
+                f"下载 {target_name}",
+                emit_done=False,
+            )
 
             if success and os.path.exists(temp_target_path):
                 try:
@@ -312,7 +318,9 @@ class FileManagerService(QObject):
 
                     shutil.move(temp_target_path, real_target_path)
                     self.log_message.emit(f"文件已成功下载并保存至: {real_target_path}", "success")
+                    self.file_transfer_progress.emit("done", f"下载 {target_name} 完成", 100)
                 except Exception as exc:
+                    self.file_transfer_progress.emit("error", f"下载 {target_name} 失败: {str(exc)}", 0)
                     self.log_message.emit(f"将缓存转移至目标目录时失败: {str(exc)}", "error")
                     try:
                         if os.path.isdir(temp_target_path):

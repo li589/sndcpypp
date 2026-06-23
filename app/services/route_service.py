@@ -30,10 +30,25 @@ class RouteService(QObject):
         self._probe_scrcpy_features = probe_scrcpy_features
         self._is_running = is_running
 
+    def _mark_intentional_video_stop(self, device_serial: str) -> None:
+        reg = self._process_registry.ensure(device_serial)
+        stop_markers = reg.setdefault("intentional_video_stop_pids", set())
+        for proc in reg.get("video", []):
+            stop_markers.add(proc.pid)
+
+    def _wait_until_process_ready(self, proc, seconds: float = 1.0, interval: float = 0.1) -> bool:
+        checks = max(1, int(seconds / interval))
+        for _ in range(checks):
+            if proc.poll() is not None:
+                return False
+            time.sleep(interval)
+        return proc.poll() is None
+
     def _stop_audio_internal(self, device_serial: str):
         try:
+            reg = self._process_registry.ensure(device_serial)
             self._process_supervisor.kill_group(device_serial, "audio")
-            port = self._cmd_manager.get_variable("port") or "28200"
+            port = str(reg.get("audio_port") or 28200)
             self._run_adb_command(
                 self._cmd_manager.get_target_cmd("stop_audio_app_cmd", device_serial=device_serial),
                 f"关闭手机端音频服务 ({device_serial})",
@@ -42,6 +57,7 @@ class RouteService(QObject):
                 self._cmd_manager.get_target_cmd("remove_audio_forward_cmd", device_serial=device_serial, port=port),
                 f"移除端口转发 ({device_serial})",
             )
+            reg["audio_port"] = None
         except Exception as exc:
             self.log_message.emit(f"清理音频进程失败: {str(exc)}", "error")
 
@@ -60,6 +76,8 @@ class RouteService(QObject):
         def _start_audio():
             try:
                 self._stop_audio_internal(device_serial)
+                reg = self._process_registry.ensure(device_serial)
+                reg["audio_port"] = port
                 self._run_adb_command(
                     self._cmd_manager.get_target_cmd("start_audio_forward_cmd", device_serial=device_serial, port=port),
                     "音频端口转发",
@@ -77,6 +95,12 @@ class RouteService(QObject):
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 proc = subprocess.Popen(player_cmd, creationflags=flags)
                 self._process_registry.register(device_serial, "audio", proc)
+
+                if not self._wait_until_process_ready(proc):
+                    self.log_message.emit(f"音频播放器启动后立即退出 (设备: {device_serial})", "error")
+                    self._stop_audio_internal(device_serial)
+                    self.operation_completed.emit("audio_route", False)
+                    return
 
                 self.log_message.emit(f"音频播放器已启动 (PID: {proc.pid}, 设备: {device_serial})", "success")
                 self.operation_completed.emit("audio_route", True)
@@ -107,6 +131,7 @@ class RouteService(QObject):
     ):
         def _start_video():
             try:
+                self._mark_intentional_video_stop(device_serial)
                 self._process_supervisor.kill_group(device_serial, "video")
 
                 max_size_flag = ""
@@ -151,6 +176,13 @@ class RouteService(QObject):
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 proc = subprocess.Popen(cmd, creationflags=flags)
                 self._process_registry.register(device_serial, "video", proc)
+
+                if not self._wait_until_process_ready(proc):
+                    self._process_supervisor.remove_if_present(device_serial, "video", proc)
+                    self.log_message.emit(f"画面路由启动后立即退出 (设备: {device_serial})", "error")
+                    self.operation_completed.emit("video_route", False)
+                    return
+
                 self.log_message.emit(f"画面路由 (Scrcpy) 已启动 (设备: {device_serial})", "success")
                 self.operation_completed.emit("video_route", True)
                 self._task_runner.start(
@@ -166,7 +198,13 @@ class RouteService(QObject):
         self._task_runner.start(name="route-start-video", group="route", target=_start_video)
 
     def _watch_video_process(self, device_serial: str, proc):
+        reg = self._process_registry.ensure(device_serial)
         proc.wait()
+        stop_markers = reg.setdefault("intentional_video_stop_pids", set())
+        was_intentionally_stopped = proc.pid in stop_markers
+        stop_markers.discard(proc.pid)
+        if self._is_running() and not was_intentionally_stopped and proc.returncode not in (0, None):
+            self.log_message.emit(f"画面路由进程已异常退出 (设备: {device_serial}, 返回码: {proc.returncode})", "warning")
         self._process_supervisor.remove_if_present(device_serial, "video", proc)
 
     def stop_streaming(self, device_serial: Optional[str] = None):
@@ -174,10 +212,12 @@ class RouteService(QObject):
             try:
                 if device_serial is None:
                     for ds in list(self._process_registry.keys()):
+                        self._mark_intentional_video_stop(ds)
                         self._process_supervisor.kill_group(ds, "video")
                         self._stop_audio_internal(ds)
                     self.log_message.emit("已彻底强制结束所有设备的流媒体路由", "info")
                 else:
+                    self._mark_intentional_video_stop(device_serial)
                     self._process_supervisor.kill_group(device_serial, "video")
                     self._stop_audio_internal(device_serial)
                     self.log_message.emit(f"已停止设备的流媒体路由 ({device_serial})", "info")

@@ -4,6 +4,19 @@ from datetime import datetime
 from typing import Any
 
 
+def get_default_settings_path(app_name: str = "sndcpypp") -> str:
+    if os.name == "nt":
+        base_dir = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+        if base_dir:
+            return os.path.join(base_dir, app_name, "settings.json")
+
+    home_dir = os.path.expanduser("~")
+    if home_dir and home_dir != "~":
+        return os.path.join(home_dir, f".{app_name}", "settings.json")
+
+    return os.path.join(os.path.abspath("."), "settings.json")
+
+
 class JsonSettingsStore:
     def __init__(self, file_path: str):
         self.file_path = file_path
@@ -49,6 +62,9 @@ class JsonSettingsStore:
         return settings
 
     def save(self, settings: dict[str, Any]) -> dict[str, Any]:
+        directory = os.path.dirname(os.path.abspath(self.file_path))
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         with open(self.file_path, "w", encoding="utf-8") as file:
             json.dump(settings, file, indent=4)
         return settings
