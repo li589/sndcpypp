@@ -85,6 +85,7 @@ core.py
 - `app/infrastructure/adb/adb_client.py`
 - `app/infrastructure/adb/path_resolver.py`
 - `app/infrastructure/adb/UsbMonitor.py`
+- `app/infrastructure/adb/scrcpy_capabilities.py`
 - `app/infrastructure/process/task_runner.py`
 - `app/infrastructure/process/registry.py`
 - `app/infrastructure/process/supervisor.py`
@@ -130,6 +131,7 @@ core.py
 - 同一设备的录制流程使用设备锁保护，保证“停止旧录制 -> 处理音频冲突 -> 启动新录制”按顺序执行。
 - 同一设备的录音和独立音频路由存在资源冲突，录音启动时必须先暂停音频路由，录制结束后再尝试恢复。
 - 录制始终使用后台无预览模式，避免在已有路由窗口之外再拉起新的录制窗口。
+- 录制 watcher 与视频路由 watcher 使用显式“主动停止”标记，避免用户手动停止时被误记为失败或异常退出。
 
 ### Can Run In Parallel
 
@@ -345,9 +347,25 @@ core.py
   - 使用 `RecordingState.STARTED / STOPPED / FAILED`
   - `RecordingService` 发出录制状态事件
   - `main.py` 负责更新状态栏计时、托盘提醒和录制会话表
+- `intentional_*_stop_pids`
+  - `RecordingService` 和 `RouteService` 在主动停止前写入显式 PID 标记
+  - watcher 只把未标记的非零退出视为真实异常
 - `log_message`
   - 仅承担控制台输出与人工可读审计信息
   - 不承担程序控制流判断
+
+## Runtime Defaults And Persistence
+
+当前运行时默认值与持久化策略做了两项增强：
+
+- 默认播放器路径
+  - `runtime_settings.py` 会优先尝试 `shutil.which("vlc")`
+  - Windows 下还会扫描常见的 `VideoLAN\VLC\vlc.exe` 安装目录
+  - 最后才回退到仓库内的 `RouteAudio/AudioExt`
+- 设置文件路径
+  - `settings_store.py` 通过 `get_default_settings_path()` 将 `settings.json` 放到用户可写目录
+  - Windows 优先使用 `%APPDATA%\sndcpypp\settings.json`
+  - 保存前自动创建父目录，避免安装目录只读导致保存失败
 
 ## Background Task Observability
 
@@ -372,6 +390,18 @@ core.py
 - UI 层不需要直接管理后台线程对象
 - 后台任务失败可以进入统一控制台日志
 - 后续如果做“任务状态面板”或调试页，可以直接复用现有观测接口
+
+## Verification Snapshot
+
+截至当前代码状态，已完成的自动化验证包括：
+
+- `49` 项 `unittest` 回归测试
+- `UsbMonitor` 生命周期、Generic fallback 和重启能力测试
+- 录制后台无预览、主动停止不误判失败测试
+- 视频路由立即退出失败、主动停止不误报警告测试
+- ADB 设备刷新重试与安装重试逻辑测试
+- 文件下载缓存转移失败、批量上传重名冲突测试
+- 设置目录自动创建、用户目录默认路径与运行时默认播放器解析测试
 
 ## Next Refactor Steps
 
