@@ -80,6 +80,7 @@ UsbMonitor.py
 当前已抽出：
 
 - `app/infrastructure/adb/command_builder.py`
+- `app/infrastructure/process/task_runner.py`
 
 后续计划：
 

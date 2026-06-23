@@ -1,7 +1,6 @@
 import os
 import shutil
 import subprocess
-import threading
 import time
 from typing import Callable, Optional
 
@@ -14,10 +13,11 @@ class ADBDeviceService(QObject):
     validation_result = pyqtSignal(list)
     log_message = pyqtSignal(str, str)
 
-    def __init__(self, cmd_manager, run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]]):
+    def __init__(self, cmd_manager, run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]], task_runner):
         super().__init__()
         self._cmd_manager = cmd_manager
         self._run_adb_command = run_adb_command
+        self._task_runner = task_runner
         self._is_refreshing = False
         self._last_device_snapshot: tuple[str, ...] | None = None
 
@@ -66,7 +66,7 @@ class ADBDeviceService(QObject):
 
             self.validation_result.emit(results)
 
-        threading.Thread(target=_validate, daemon=True).start()
+        self._task_runner.start(name="adb-validate-paths", target=_validate)
 
     def refresh_devices(self):
         if self._is_refreshing:
@@ -103,7 +103,7 @@ class ADBDeviceService(QObject):
             finally:
                 self._is_refreshing = False
 
-        threading.Thread(target=_refresh, daemon=True).start()
+        self._task_runner.start(name="adb-refresh-devices", target=_refresh)
 
     def install_apk(self, device_serial: str):
         def _install():
@@ -123,7 +123,7 @@ class ADBDeviceService(QObject):
                 self.log_message.emit(f"安装过程出错: {str(exc)}", "error")
                 self.operation_completed.emit("install", False)
 
-        threading.Thread(target=_install, daemon=True).start()
+        self._task_runner.start(name="adb-install-apk", target=_install)
 
     def force_kill_adb(self):
         def _kill():
@@ -149,14 +149,14 @@ class ADBDeviceService(QObject):
             except Exception as exc:
                 self.log_message.emit(f"强杀过程异常: {str(exc)}", "error")
 
-        threading.Thread(target=_kill, daemon=True).start()
+        self._task_runner.start(name="adb-force-kill", target=_kill)
 
     def start_adb_server(self):
         def _start():
             self.log_message.emit("正在唤起 ADB 并枚举设备...", "info")
             self.refresh_devices()
 
-        threading.Thread(target=_start, daemon=True).start()
+        self._task_runner.start(name="adb-start-server", target=_start)
 
     def restart_adb(self):
         def _restart():
@@ -165,7 +165,7 @@ class ADBDeviceService(QObject):
             self.log_message.emit("ADB服务重启指令已发送，正在重新枚举设备", "success")
             self.refresh_devices()
 
-        threading.Thread(target=_restart, daemon=True).start()
+        self._task_runner.start(name="adb-restart-server", target=_restart)
 
     def _emit_device_summary(self, devices: list[str]) -> None:
         snapshot = tuple(devices)

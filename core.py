@@ -1,4 +1,3 @@
-import threading
 import subprocess
 from typing import List, Optional
 
@@ -19,6 +18,7 @@ from app.infrastructure.adb.command_builder import ADBCommandBuilder
 from app.infrastructure.adb.scrcpy_capabilities import ScrcpyCapabilitiesProbe
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
+from app.infrastructure.process.task_runner import BackgroundTaskRunner
 from app.services.adb_device_service import ADBDeviceService
 from app.services.debug_command_service import DebugCommandService
 from app.services.file_manager_service import FileManagerService
@@ -47,16 +47,19 @@ class CoreController(QObject):
         self._running = True
         self._process_registry = ProcessRegistry()
         self._process_supervisor = ProcessSupervisor(self._process_registry)
+        self._task_runner = BackgroundTaskRunner()
         self._scrcpy_capabilities_probe = ScrcpyCapabilitiesProbe()
         self._adb_client = ADBClient(self.log_message.emit)
         self._adb_device_service = ADBDeviceService(
             cmd_manager=self._cmd_manager,
             run_adb_command=self._adb_client.run_logged,
+            task_runner=self._task_runner,
         )
         self._route_service = RouteService(
             cmd_manager=self._cmd_manager,
             process_registry=self._process_registry,
             process_supervisor=self._process_supervisor,
+            task_runner=self._task_runner,
             run_adb_command=self._adb_client.run_logged,
             probe_scrcpy_features=self._probe_scrcpy_features,
             is_running=lambda: self._running,
@@ -65,6 +68,7 @@ class CoreController(QObject):
             cmd_manager=self._cmd_manager,
             process_registry=self._process_registry,
             process_supervisor=self._process_supervisor,
+            task_runner=self._task_runner,
             probe_scrcpy_features=self._probe_scrcpy_features,
             start_audio_route=self._route_service.start_audio_route,
             stop_audio=self._route_service.stop_audio_sync,
@@ -72,6 +76,7 @@ class CoreController(QObject):
         self._debug_command_service = DebugCommandService(
             cmd_manager=self._cmd_manager,
             adb_client=self._adb_client,
+            task_runner=self._task_runner,
         )
         self._file_manager_service = FileManagerService(
             cmd_manager=self._cmd_manager,
@@ -79,6 +84,7 @@ class CoreController(QObject):
             transfer_progress_parser=None,
             process_registry=self._process_registry,
             process_supervisor=self._process_supervisor,
+            task_runner=self._task_runner,
             run_adb_command=self._adb_client.run_logged,
             is_running=lambda: self._running,
         )
@@ -171,7 +177,7 @@ class CoreController(QObject):
         return self._scrcpy_capabilities_probe.probe(scrcpy_path)
 
     def prewarm_scrcpy_capabilities(self):
-        threading.Thread(target=self._probe_scrcpy_features, daemon=True).start()
+        self._task_runner.start(name="core-prewarm-scrcpy-features", target=self._probe_scrcpy_features)
 
     def request_prewarm_scrcpy_capabilities(self):
         self.prewarm_scrcpy_capabilities()

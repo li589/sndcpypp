@@ -1,6 +1,5 @@
 import os
 import subprocess
-import threading
 import time
 from typing import Callable, Optional
 
@@ -17,6 +16,7 @@ class RouteService(QObject):
         cmd_manager,
         process_registry,
         process_supervisor,
+        task_runner,
         run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
         probe_scrcpy_features: Callable[[], dict],
         is_running: Callable[[], bool],
@@ -25,6 +25,7 @@ class RouteService(QObject):
         self._cmd_manager = cmd_manager
         self._process_registry = process_registry
         self._process_supervisor = process_supervisor
+        self._task_runner = task_runner
         self._run_adb_command = run_adb_command
         self._probe_scrcpy_features = probe_scrcpy_features
         self._is_running = is_running
@@ -48,7 +49,11 @@ class RouteService(QObject):
         self._stop_audio_internal(device_serial)
 
     def stop_audio(self, device_serial: str):
-        threading.Thread(target=lambda: self._stop_audio_internal(device_serial), daemon=True).start()
+        self._task_runner.start(
+            name="route-stop-audio",
+            target=self._stop_audio_internal,
+            args=(device_serial,),
+        )
 
     def start_audio_route(self, device_serial: str, port: int = 28200):
         def _start_audio():
@@ -87,7 +92,7 @@ class RouteService(QObject):
                 self.log_message.emit(f"音频路由启动失败: {str(exc)}", "error")
                 self.operation_completed.emit("audio_route", False)
 
-        threading.Thread(target=_start_audio, daemon=True).start()
+        self._task_runner.start(name="route-start-audio", target=_start_audio)
 
     def start_video_route(
         self,
@@ -147,15 +152,16 @@ class RouteService(QObject):
                 self._process_registry.register(device_serial, "video", proc)
                 self.log_message.emit(f"画面路由 (Scrcpy) 已启动 (设备: {device_serial})", "success")
                 self.operation_completed.emit("video_route", True)
-                threading.Thread(
-                    target=lambda: self._watch_video_process(device_serial, proc),
-                    daemon=True,
-                ).start()
+                self._task_runner.start(
+                    name="route-watch-video",
+                    target=self._watch_video_process,
+                    args=(device_serial, proc),
+                )
             except Exception as exc:
                 self.log_message.emit(f"视频路由启动失败: {str(exc)}", "error")
                 self.operation_completed.emit("video_route", False)
 
-        threading.Thread(target=_start_video, daemon=True).start()
+        self._task_runner.start(name="route-start-video", target=_start_video)
 
     def _watch_video_process(self, device_serial: str, proc):
         proc.wait()
@@ -176,7 +182,7 @@ class RouteService(QObject):
             except Exception as exc:
                 self.log_message.emit(f"停止路由发生错误: {str(exc)}", "error")
 
-        threading.Thread(target=_stop, daemon=True).start()
+        self._task_runner.start(name="route-stop-streaming", target=_stop)
 
     def is_audio_running(self, device_serial: str) -> bool:
         reg = self._process_registry.ensure(device_serial)

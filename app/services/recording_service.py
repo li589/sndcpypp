@@ -1,7 +1,6 @@
 import os
 import shlex
 import subprocess
-import threading
 import time
 from typing import Callable, Optional
 
@@ -16,6 +15,7 @@ class RecordingService(QObject):
         cmd_manager,
         process_registry,
         process_supervisor,
+        task_runner,
         probe_scrcpy_features: Callable[[], dict],
         start_audio_route: Callable[[str, int], None],
         stop_audio: Callable[[str], None],
@@ -24,6 +24,7 @@ class RecordingService(QObject):
         self._cmd_manager = cmd_manager
         self._process_registry = process_registry
         self._process_supervisor = process_supervisor
+        self._task_runner = task_runner
         self._probe_scrcpy_features = probe_scrcpy_features
         self._start_audio_route = start_audio_route
         self._stop_audio = stop_audio
@@ -103,13 +104,16 @@ class RecordingService(QObject):
                             self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
                             self._start_audio_route(device_serial, port=28200)
 
-                    threading.Thread(target=_monitor_and_restore, daemon=True).start()
+                    self._task_runner.start(
+                        name="record-monitor-and-restore",
+                        target=_monitor_and_restore,
+                    )
                 except Exception as exc:
                     self.log_message.emit(f"录制启动失败: {str(exc)}", "error")
                     if audio_was_running:
                         self._start_audio_route(device_serial, port=28200)
 
-        threading.Thread(target=_rec, daemon=True).start()
+        self._task_runner.start(name="record-start", target=_rec)
 
     def stop_recording(self, device_serial: Optional[str] = None):
         def _stop_rec_thread():
@@ -122,4 +126,4 @@ class RecordingService(QObject):
                     self._process_supervisor.kill_group(device_serial, "record")
             self.log_message.emit("录制已结束保存 (等待后台封包完成)", "success")
 
-        threading.Thread(target=_stop_rec_thread, daemon=True).start()
+        self._task_runner.start(name="record-stop", target=_stop_rec_thread)

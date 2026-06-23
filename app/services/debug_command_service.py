@@ -1,7 +1,6 @@
 import os
 import shlex
 import subprocess
-import threading
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -9,10 +8,11 @@ from PyQt6.QtCore import QObject, pyqtSignal
 class DebugCommandService(QObject):
     log_message = pyqtSignal(str, str)
 
-    def __init__(self, cmd_manager, adb_client):
+    def __init__(self, cmd_manager, adb_client, task_runner):
         super().__init__()
         self._cmd_manager = cmd_manager
         self._adb_client = adb_client
+        self._task_runner = task_runner
 
     def execute_custom_cmd(self, device_serial: str, command_str: str, cmd_type: str = "adb"):
         def _run():
@@ -44,4 +44,4 @@ class DebugCommandService(QObject):
                 cwd = sndcpy_dir if sndcpy_dir and os.path.isdir(sndcpy_dir) else None
                 self._adb_client.run_logged(full_command, f"[{cmd_type}命令]", cwd=cwd)
 
-        threading.Thread(target=_run, daemon=True).start()
+        self._task_runner.start(name="debug-custom-command", target=_run)

@@ -2,7 +2,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import threading
 import uuid
 from typing import Callable, Optional
 
@@ -94,6 +93,7 @@ class FileManagerService(QObject):
         transfer_progress_parser,
         process_registry,
         process_supervisor,
+        task_runner,
         run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
         is_running: Callable[[], bool],
     ):
@@ -103,6 +103,7 @@ class FileManagerService(QObject):
         self._transfer_progress_parser = transfer_progress_parser or TransferProgressParser()
         self._process_registry = process_registry
         self._process_supervisor = process_supervisor
+        self._task_runner = task_runner
         self._run_adb_command = run_adb_command
         self._is_running = is_running
         self._symlink_workers: dict[str, _SymlinkResolverWorker] = {}
@@ -154,7 +155,7 @@ class FileManagerService(QObject):
                 self.log_message.emit("读取目录失败 (可能无权限或路径错误)", "error")
                 self.files_listed.emit(path, [], False)
 
-        threading.Thread(target=_list, daemon=True).start()
+        self._task_runner.start(name="files-list-basic", target=_list)
 
     def list_device_files_detailed(self, device_serial: str, path: str):
         def _list():
@@ -199,7 +200,7 @@ class FileManagerService(QObject):
                 self.log_message.emit("读取目录失败 (可能无权限或路径错误)", "error")
                 self.files_listed_detailed.emit(path, [], False)
 
-        threading.Thread(target=_list, daemon=True).start()
+        self._task_runner.start(name="files-list-detailed", target=_list)
 
     def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list):
         symlinks_to_resolve = []
@@ -234,7 +235,7 @@ class FileManagerService(QObject):
             if self._symlink_workers.get(device_serial) is worker:
                 del self._symlink_workers[device_serial]
 
-        threading.Thread(target=_run_worker, daemon=True).start()
+        self._task_runner.start(name="files-resolve-symlinks", target=_run_worker)
 
     def _run_transfer_with_progress(self, device_serial: str, cmd: list, desc: str) -> bool:
         self.file_transfer_progress.emit("start", f"正在{desc}...", 0)
@@ -329,7 +330,7 @@ class FileManagerService(QObject):
                 except Exception:
                     pass
 
-        threading.Thread(target=_pull_task, daemon=True).start()
+        self._task_runner.start(name="files-pull", target=_pull_task)
 
     def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str = None):
         if not remote_dir.endswith("/"):
@@ -343,11 +344,11 @@ class FileManagerService(QObject):
             local_path=local_path,
             remote_path=final_remote_path,
         )
-        threading.Thread(
+        self._task_runner.start(
+            name="files-push",
             target=self._run_transfer_with_progress,
             args=(device_serial, cmd, f"上传 {target_name}"),
-            daemon=True,
-        ).start()
+        )
 
     def stop_file_transfers(self, device_serial: Optional[str] = None):
         if device_serial is None:
