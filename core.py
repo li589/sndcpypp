@@ -18,12 +18,13 @@ from app.infrastructure.adb.command_builder import ADBCommandBuilder
 from app.infrastructure.adb.scrcpy_capabilities import ScrcpyCapabilitiesProbe
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
-from app.infrastructure.process.task_runner import BackgroundTaskRunner
+from app.infrastructure.process.task_runner import BackgroundTaskRunner, TaskSnapshot
 from app.services.adb_device_service import ADBDeviceService
 from app.services.debug_command_service import DebugCommandService
 from app.services.file_manager_service import FileManagerService
 from app.services.recording_service import RecordingService
 from app.services.route_service import RouteService
+from app.ui.message_templates import log_background_task_failed
 
 
 ADBCommand = ADBCommandBuilder
@@ -48,6 +49,7 @@ class CoreController(QObject):
         self._process_registry = ProcessRegistry()
         self._process_supervisor = ProcessSupervisor(self._process_registry)
         self._task_runner = BackgroundTaskRunner()
+        self._task_runner.add_listener(self._handle_task_runner_event)
         self._scrcpy_capabilities_probe = ScrcpyCapabilitiesProbe()
         self._adb_client = ADBClient(self.log_message.emit)
         self._adb_device_service = ADBDeviceService(
@@ -133,6 +135,36 @@ class CoreController(QObject):
         self.stop_file_transfers(None)
         self.log_message.emit("ADB控制器已安全停止", "info")
 
+    def _handle_task_runner_event(self, task: TaskSnapshot):
+        if task.status != "failed":
+            return
+        self.log_message.emit(
+            log_background_task_failed(task.group, task.display_name, task.error_text),
+            "error",
+        )
+
+    def get_background_task_snapshot(self, *, include_completed: bool = True) -> list[TaskSnapshot]:
+        return self._task_runner.snapshot(include_completed=include_completed)
+
+    def get_background_tasks_by_group(self, *, include_completed: bool = True) -> dict[str, list[TaskSnapshot]]:
+        return self._task_runner.snapshot_by_group(include_completed=include_completed)
+
+    def get_recent_background_failures(self, limit: int = 10) -> list[TaskSnapshot]:
+        return self._task_runner.recent_failed_tasks(limit=limit)
+
+    def clear_background_task_history(
+        self,
+        *,
+        group: str | None = None,
+        keep_failed: bool = True,
+        only_completed: bool = False,
+    ) -> int:
+        return self._task_runner.clear_history(
+            group=group,
+            keep_failed=keep_failed,
+            only_completed=only_completed,
+        )
+
     def request_configure_runtime(self, request: RuntimeConfigurationRequest):
         self.configure_runtime(
             adb_path=request.adb_path,
@@ -177,7 +209,11 @@ class CoreController(QObject):
         return self._scrcpy_capabilities_probe.probe(scrcpy_path)
 
     def prewarm_scrcpy_capabilities(self):
-        self._task_runner.start(name="core-prewarm-scrcpy-features", target=self._probe_scrcpy_features)
+        self._task_runner.start(
+            name="core-prewarm-scrcpy-features",
+            group="core",
+            target=self._probe_scrcpy_features,
+        )
 
     def request_prewarm_scrcpy_capabilities(self):
         self.prewarm_scrcpy_capabilities()

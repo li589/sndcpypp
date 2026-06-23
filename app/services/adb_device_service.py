@@ -66,7 +66,7 @@ class ADBDeviceService(QObject):
 
             self.validation_result.emit(results)
 
-        self._task_runner.start(name="adb-validate-paths", target=_validate)
+        self._task_runner.start(name="adb-validate-paths", group="adb", target=_validate)
 
     def refresh_devices(self):
         if self._is_refreshing:
@@ -103,7 +103,7 @@ class ADBDeviceService(QObject):
             finally:
                 self._is_refreshing = False
 
-        self._task_runner.start(name="adb-refresh-devices", target=_refresh)
+        self._task_runner.start(name="adb-refresh-devices", group="adb", target=_refresh)
 
     def install_apk(self, device_serial: str):
         def _install():
@@ -123,7 +123,7 @@ class ADBDeviceService(QObject):
                 self.log_message.emit(f"安装过程出错: {str(exc)}", "error")
                 self.operation_completed.emit("install", False)
 
-        self._task_runner.start(name="adb-install-apk", target=_install)
+        self._task_runner.start(name="adb-install-apk", group="adb", target=_install)
 
     def force_kill_adb(self):
         def _kill():
@@ -149,14 +149,14 @@ class ADBDeviceService(QObject):
             except Exception as exc:
                 self.log_message.emit(f"强杀过程异常: {str(exc)}", "error")
 
-        self._task_runner.start(name="adb-force-kill", target=_kill)
+        self._task_runner.start(name="adb-force-kill", group="adb", target=_kill)
 
     def start_adb_server(self):
         def _start():
             self.log_message.emit("正在唤起 ADB 并枚举设备...", "info")
             self.refresh_devices()
 
-        self._task_runner.start(name="adb-start-server", target=_start)
+        self._task_runner.start(name="adb-start-server", group="adb", target=_start)
 
     def restart_adb(self):
         def _restart():
@@ -165,7 +165,7 @@ class ADBDeviceService(QObject):
             self.log_message.emit("ADB服务重启指令已发送，正在重新枚举设备", "success")
             self.refresh_devices()
 
-        self._task_runner.start(name="adb-restart-server", target=_restart)
+        self._task_runner.start(name="adb-restart-server", group="adb", target=_restart)
 
     def _emit_device_summary(self, devices: list[str]) -> None:
         snapshot = tuple(devices)

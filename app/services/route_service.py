@@ -51,6 +51,7 @@ class RouteService(QObject):
     def stop_audio(self, device_serial: str):
         self._task_runner.start(
             name="route-stop-audio",
+            group="route",
             target=self._stop_audio_internal,
             args=(device_serial,),
         )
@@ -92,7 +93,7 @@ class RouteService(QObject):
                 self.log_message.emit(f"音频路由启动失败: {str(exc)}", "error")
                 self.operation_completed.emit("audio_route", False)
 
-        self._task_runner.start(name="route-start-audio", target=_start_audio)
+        self._task_runner.start(name="route-start-audio", group="route", target=_start_audio)
 
     def start_video_route(
         self,
@@ -154,6 +155,7 @@ class RouteService(QObject):
                 self.operation_completed.emit("video_route", True)
                 self._task_runner.start(
                     name="route-watch-video",
+                    group="route",
                     target=self._watch_video_process,
                     args=(device_serial, proc),
                 )
@@ -161,7 +163,7 @@ class RouteService(QObject):
                 self.log_message.emit(f"视频路由启动失败: {str(exc)}", "error")
                 self.operation_completed.emit("video_route", False)
 
-        self._task_runner.start(name="route-start-video", target=_start_video)
+        self._task_runner.start(name="route-start-video", group="route", target=_start_video)
 
     def _watch_video_process(self, device_serial: str, proc):
         proc.wait()
@@ -182,7 +184,7 @@ class RouteService(QObject):
             except Exception as exc:
                 self.log_message.emit(f"停止路由发生错误: {str(exc)}", "error")
 
-        self._task_runner.start(name="route-stop-streaming", target=_stop)
+        self._task_runner.start(name="route-stop-streaming", group="route", target=_stop)
 
     def is_audio_running(self, device_serial: str) -> bool:
         reg = self._process_registry.ensure(device_serial)

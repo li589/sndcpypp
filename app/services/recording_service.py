@@ -106,6 +106,7 @@ class RecordingService(QObject):
 
                     self._task_runner.start(
                         name="record-monitor-and-restore",
+                        group="recording",
                         target=_monitor_and_restore,
                     )
                 except Exception as exc:
@@ -113,7 +114,7 @@ class RecordingService(QObject):
                     if audio_was_running:
                         self._start_audio_route(device_serial, port=28200)
 
-        self._task_runner.start(name="record-start", target=_rec)
+        self._task_runner.start(name="record-start", group="recording", target=_rec)
 
     def stop_recording(self, device_serial: Optional[str] = None):
         def _stop_rec_thread():
@@ -126,4 +127,4 @@ class RecordingService(QObject):
                     self._process_supervisor.kill_group(device_serial, "record")
             self.log_message.emit("录制已结束保存 (等待后台封包完成)", "success")
 
-        self._task_runner.start(name="record-stop", target=_stop_rec_thread)
+        self._task_runner.start(name="record-stop", group="recording", target=_stop_rec_thread)

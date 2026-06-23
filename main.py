@@ -65,6 +65,7 @@ from app.ui.message_templates import (
     log_settings_save_failed,
     log_symlink_resolved,
     log_usb_monitor_init_failed,
+    log_usb_monitor_start_failed,
     log_usb_monitor_started,
     render_console_html,
     status_audio_route_submitted,
@@ -126,7 +127,7 @@ class SndcpyGUI(QMainWindow):
         self.usb_event_signal.connect(self.trigger_usb_debounce)
         
         try:
-            from UsbMonitor import CrossPlatformUSBMonitor
+            from app.infrastructure.adb.UsbMonitor import CrossPlatformUSBMonitor
             self.usb_monitor = CrossPlatformUSBMonitor()
             self.usb_monitor.on_connect(lambda d: self.usb_event_signal.emit())
             self.usb_monitor.on_disconnect(lambda d: self.usb_event_signal.emit())
@@ -174,8 +175,13 @@ class SndcpyGUI(QMainWindow):
         self.log_to_console(log_initial_validation(), "info")
         self.validate_paths()
         if hasattr(self, 'usb_monitor') and self.usb_monitor:
-            self.usb_monitor.start_monitoring()
-            self.log_to_console(log_usb_monitor_started(), "success")
+            try:
+                self.usb_monitor.start_monitoring()
+            except Exception as e:
+                self.usb_monitor = None
+                self.log_to_console(log_usb_monitor_start_failed(str(e)), "warning")
+            else:
+                self.log_to_console(log_usb_monitor_started(), "success")
 
     def set_auto_refresh_value(self, value: int):
         self.auto_refresh_value = value

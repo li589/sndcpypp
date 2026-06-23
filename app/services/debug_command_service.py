@@ -44,4 +44,4 @@ class DebugCommandService(QObject):
                 cwd = sndcpy_dir if sndcpy_dir and os.path.isdir(sndcpy_dir) else None
                 self._adb_client.run_logged(full_command, f"[{cmd_type}命令]", cwd=cwd)
 
-        self._task_runner.start(name="debug-custom-command", target=_run)
+        self._task_runner.start(name="debug-custom-command", group="debug", target=_run)

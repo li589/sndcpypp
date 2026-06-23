@@ -127,6 +127,15 @@ def log_usb_monitor_init_failed(error_text: str) -> str:
     return f"USB热插拔监听初始化失败: {error_text}"
 
 
+def log_usb_monitor_start_failed(error_text: str) -> str:
+    return f"USB热插拔监听启动失败，已跳过后台监测: {error_text}"
+
+
+def log_background_task_failed(group: str, name: str, error_text: str | None) -> str:
+    detail = error_text or "未知错误"
+    return f"后台任务失败 [{group}] {name}: {detail}"
+
+
 def log_adb_resolution_fallback(source: str, path: str) -> str:
     return f"指定的 ADB 不可用，已自动回退到 {source}: {path}"
 
