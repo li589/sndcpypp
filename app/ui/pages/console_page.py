@@ -10,6 +10,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+CONSOLE_TARGET_NO_DEVICE = "[ADB无设备]"
+CONSOLE_TARGET_SCRCPY = "[Scrcpy命令]"
+
 
 class ConsolePage(QWidget):
     def __init__(self, command_input_factory, on_show_console_menu, on_execute_command, parent=None):
@@ -36,8 +39,8 @@ class ConsolePage(QWidget):
         bottom_cmd_layout.setContentsMargins(0, 0, 0, 0)
 
         self.device_combo = QComboBox()
-        self.device_combo.addItem("[ADB无设备]")
-        self.device_combo.addItem("[Scrcpy命令]")
+        self.device_combo.addItem(CONSOLE_TARGET_NO_DEVICE)
+        self.device_combo.addItem(CONSOLE_TARGET_SCRCPY)
         bottom_cmd_layout.addWidget(self.device_combo, 1)
 
         self.cmd_input = command_input_factory()

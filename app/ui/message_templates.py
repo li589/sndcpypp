@@ -80,6 +80,22 @@ def status_recording_preparing(device_serial: str) -> str:
     return f"正在准备录制 ({device_serial})..."
 
 
+def status_recording_active(device_serial: str, elapsed_text: str) -> str:
+    return f"正在录制 ({device_serial}) {elapsed_text}"
+
+
+def status_recording_active_multi(device_count: int, elapsed_text: str) -> str:
+    return f"正在录制 {device_count} 台设备，最长已录制 {elapsed_text}"
+
+
+def status_recording_finished(device_serial: str) -> str:
+    return f"录制已结束并保存完成 ({device_serial})"
+
+
+def status_recording_failed(device_serial: str) -> str:
+    return f"录制启动失败 ({device_serial})"
+
+
 def status_adb_restart_submitted() -> str:
     return "ADB 重启指令已发送，正在后台处理..."
 
@@ -224,6 +240,14 @@ def tray_hidden_title() -> str:
 
 def tray_hidden_message() -> str:
     return "已隐藏至系统托盘，后台服务保持运行中"
+
+
+def tray_recording_reminder_title() -> str:
+    return "Sndcpy++ 录制提醒"
+
+
+def tray_recording_reminder_message(device_serial: str, elapsed_text: str) -> str:
+    return f"设备 {device_serial} 已连续录制 {elapsed_text}。当前未检测到全屏窗口，请留意录制状态。"
 
 
 def render_console_html(message: str, msg_type: str, timestamp: datetime) -> str:

@@ -5,10 +5,12 @@ import time
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
+from app.domain.models.operation_requests import RecordingState, RecordingStateEvent
 
 
 class RecordingService(QObject):
     log_message = pyqtSignal(str, str)
+    recording_state_changed = pyqtSignal(object)
 
     def __init__(
         self,
@@ -52,8 +54,8 @@ class RecordingService(QObject):
                 cmd.extend(["-s", device_serial, "--record", save_path])
 
                 features = self._probe_scrcpy_features()
-                if bg_mode:
-                    cmd.append(features.get("no_playback", "--no-playback"))
+                # Recording always runs without opening a new scrcpy preview window.
+                cmd.append(features.get("no_playback", "--no-playback"))
 
                 if not record_video:
                     cmd.append("--no-video")
@@ -96,10 +98,16 @@ class RecordingService(QObject):
 
                     proc = subprocess.Popen(cmd, creationflags=flags)
                     self._process_registry.register(device_serial, "record", proc)
+                    self.recording_state_changed.emit(
+                        RecordingStateEvent(RecordingState.STARTED, device_serial, save_path)
+                    )
 
                     def _monitor_and_restore():
                         proc.wait()
                         self._process_supervisor.remove_if_present(device_serial, "record", proc)
+                        self.recording_state_changed.emit(
+                            RecordingStateEvent(RecordingState.STOPPED, device_serial, save_path)
+                        )
                         if audio_was_running:
                             self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
                             self._start_audio_route(device_serial, port=28200)
@@ -110,6 +118,9 @@ class RecordingService(QObject):
                         target=_monitor_and_restore,
                     )
                 except Exception as exc:
+                    self.recording_state_changed.emit(
+                        RecordingStateEvent(RecordingState.FAILED, device_serial, str(exc))
+                    )
                     self.log_message.emit(f"录制启动失败: {str(exc)}", "error")
                     if audio_was_running:
                         self._start_audio_route(device_serial, port=28200)

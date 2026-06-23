@@ -1,5 +1,18 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
+
+
+class ConsoleTargetKind(str, Enum):
+    ADB_DEVICE = "adb_device"
+    ADB_GLOBAL = "adb_global"
+    SCRCPY = "scrcpy"
+
+
+class RecordingState(str, Enum):
+    STARTED = "started"
+    STOPPED = "stopped"
+    FAILED = "failed"
 
 
 @dataclass(slots=True)
@@ -14,8 +27,16 @@ class RuntimeConfigurationRequest:
 
 @dataclass(slots=True)
 class ConsoleCommandRequest:
-    target: str
     command_str: str
+    target_kind: ConsoleTargetKind
+    device_serial: str = ""
+
+
+@dataclass(slots=True)
+class RecordingStateEvent:
+    state: RecordingState
+    device_serial: str
+    payload: str
 
 
 @dataclass(slots=True)

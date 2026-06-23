@@ -74,13 +74,49 @@ def toggle_top_window(window) -> None:
 
 def hide_to_tray(window) -> None:
     window.hide()
+    show_tray_message(
+        window,
+        tray_hidden_title(),
+        tray_hidden_message(),
+        icon=QSystemTrayIcon.MessageIcon.Information,
+        timeout=2000,
+    )
+
+
+def show_tray_message(window, title: str, message: str, *, icon, timeout: int = 5000) -> None:
     if hasattr(window, "tray_icon"):
         window.tray_icon.showMessage(
-            tray_hidden_title(),
-            tray_hidden_message(),
-            QSystemTrayIcon.MessageIcon.Information,
-            2000,
+            title,
+            message,
+            icon,
+            timeout,
         )
+
+
+def is_foreground_fullscreen(window) -> bool:
+    if sys.platform == "win32":
+        try:
+            import win32api
+            import win32gui
+        except ImportError:
+            pass
+        else:
+            hwnd = win32gui.GetForegroundWindow()
+            if hwnd:
+                try:
+                    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+                    monitor = win32api.MonitorFromWindow(hwnd)
+                    monitor_info = win32api.GetMonitorInfo(monitor)
+                    work_left, work_top, work_right, work_bottom = monitor_info["Monitor"]
+                    return (
+                        left <= work_left
+                        and top <= work_top
+                        and right >= work_right
+                        and bottom >= work_bottom
+                    )
+                except Exception:
+                    pass
+    return bool(window.windowState() & Qt.WindowState.WindowFullScreen) or window.isFullScreen()
 
 
 def force_exit(window) -> None:

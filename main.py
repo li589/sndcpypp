@@ -1,20 +1,24 @@
 import sys
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QLineEdit, QPushButton,
-    QTableWidgetItem
+    QSystemTrayIcon, QTableWidgetItem
 )
 
 from app.domain.models.operation_requests import (
     BrowseFilesRequest,
     ConsoleCommandRequest,
+    ConsoleTargetKind,
     PullFileRequest,
     PushFileRequest,
     RecordingRequest,
+    RecordingState,
+    RecordingStateEvent,
     RoutingRequest,
 )
 from app.infrastructure.adb.path_resolver import ADBPathResolver, ResolvedADBPath
@@ -42,14 +46,17 @@ from app.ui.main_window_shell import (
     force_exit,
     handle_window_context_menu,
     hide_to_tray,
+    is_foreground_fullscreen,
     init_tray_icon,
     minimize_all_windows,
+    show_tray_message,
     show_main_window,
     toggle_top_window,
     tray_icon_activated,
 )
 from app.ui.menu_coordinator import show_console_context_menu
 from app.ui.main_window_ui import build_main_window_ui, configure_main_window_shell
+from app.ui.pages.console_page import CONSOLE_TARGET_NO_DEVICE, CONSOLE_TARGET_SCRCPY
 from app.ui.message_templates import (
     file_status_read_failed,
     log_adb_resolution_builtin,
@@ -63,6 +70,10 @@ from app.ui.message_templates import (
     log_loaded_items,
     log_settings_load_warning,
     log_settings_save_failed,
+    status_recording_active,
+    status_recording_active_multi,
+    status_recording_failed,
+    status_recording_finished,
     log_symlink_resolved,
     log_usb_monitor_init_failed,
     log_usb_monitor_start_failed,
@@ -73,6 +84,8 @@ from app.ui.message_templates import (
     status_recording_preparing,
     status_routing_submitted,
     status_usb_refresh_pending,
+    tray_recording_reminder_message,
+    tray_recording_reminder_title,
 )
 from app.ui.popup_manager import PopupManager
 from app.ui.recording_actions import prepare_recording_start
@@ -83,8 +96,18 @@ from app.ui.runtime_settings import (
     resolve_runtime_paths,
 )
 from core import CoreController, FileInfo, FileType
+
+
+@dataclass(slots=True)
+class RecordingSessionState:
+    save_path: str
+    started_at: datetime
+    reminder_sent: bool = False
+
+
 class SndcpyGUI(QMainWindow):
     usb_event_signal = pyqtSignal() 
+    LONG_RECORDING_REMINDER_SECONDS = 30 * 60
 
     def __init__(self):
         super().__init__()
@@ -110,6 +133,7 @@ class SndcpyGUI(QMainWindow):
         self._last_log_signature: tuple[str, str] | None = None
         self._last_log_time: datetime | None = None
         self._last_adb_resolution_signature: tuple[str, str, bool, str] | None = None
+        self._recording_sessions: dict[str, RecordingSessionState] = {}
         
         build_main_window_ui(self)
         if self._pending_settings_load_warning:
@@ -117,6 +141,14 @@ class SndcpyGUI(QMainWindow):
         self.file_page_controller = self._create_file_page_controller()
         self.load_settings()
         self.init_tray_icon()
+
+        self.recording_status_timer = QTimer(self)
+        self.recording_status_timer.setInterval(1000)
+        self.recording_status_timer.timeout.connect(self._refresh_recording_status)
+
+        self.recording_reminder_timer = QTimer(self)
+        self.recording_reminder_timer.setInterval(60_000)
+        self.recording_reminder_timer.timeout.connect(self._check_long_recording_reminders)
         
         self.scan_timer = QTimer(self)
         self.scan_timer.timeout.connect(self.auto_refresh_devices)
@@ -295,6 +327,7 @@ class SndcpyGUI(QMainWindow):
         controller.operation_completed.connect(self.handle_operation_complete)
         controller.validation_result.connect(self.handle_validation_result)
         controller.player_process_exited.connect(self.handle_player_exit)
+        controller.recording_state_changed.connect(self.handle_recording_state_change)
         controller.files_listed_detailed.connect(self.update_file_table)
         controller.symlink_resolved.connect(self.handle_symlink_resolved)
         controller.file_transfer_progress.connect(self.handle_file_progress)
@@ -308,6 +341,7 @@ class SndcpyGUI(QMainWindow):
             (controller.operation_completed, self.handle_operation_complete),
             (controller.validation_result, self.handle_validation_result),
             (controller.player_process_exited, self.handle_player_exit),
+            (controller.recording_state_changed, self.handle_recording_state_change),
             (controller.files_listed_detailed, self.update_file_table),
             (controller.symlink_resolved, self.handle_symlink_resolved),
             (controller.file_transfer_progress, self.handle_file_progress),
@@ -336,7 +370,7 @@ class SndcpyGUI(QMainWindow):
         return RecordingRequest(
             device_serial=device_serial,
             save_path=save_path,
-            bg_mode=self.rec_bg_check.isChecked(),
+            bg_mode=True,
             record_video=self.rec_video_check.isChecked(),
             record_audio=self.rec_audio_check.isChecked(),
             record_ori_index=self.rec_ori_combo.currentIndex(),
@@ -346,9 +380,20 @@ class SndcpyGUI(QMainWindow):
         return BrowseFilesRequest(device_serial=device_serial, remote_path=remote_path)
 
     def _build_console_command_request(self, command_str: str) -> ConsoleCommandRequest:
+        selected_target = self.device_combo.currentText()
+        target_kind = ConsoleTargetKind.ADB_GLOBAL
+        device_serial = ""
+
+        if selected_target == CONSOLE_TARGET_SCRCPY:
+            target_kind = ConsoleTargetKind.SCRCPY
+        elif selected_target and selected_target != CONSOLE_TARGET_NO_DEVICE:
+            target_kind = ConsoleTargetKind.ADB_DEVICE
+            device_serial = selected_target
+
         return ConsoleCommandRequest(
-            target=self.device_combo.currentText(),
             command_str=command_str,
+            target_kind=target_kind,
+            device_serial=device_serial,
         )
 
     def _build_push_file_request(self, device_serial: str, local_path: str, rename_to: str | None = None) -> PushFileRequest:
@@ -576,6 +621,90 @@ class SndcpyGUI(QMainWindow):
                 device_template="录制停止指令已发送 ({device})",
                 all_devices_text="录制停止指令已发送 (所有设备)",
             )
+
+    @pyqtSlot(object)
+    def handle_recording_state_change(self, event: RecordingStateEvent):
+        if event.state == RecordingState.STARTED:
+            self._recording_sessions[event.device_serial] = RecordingSessionState(
+                save_path=event.payload,
+                started_at=datetime.now(),
+            )
+            if not self.recording_status_timer.isActive():
+                self.recording_status_timer.start()
+            if not self.recording_reminder_timer.isActive():
+                self.recording_reminder_timer.start()
+            self._refresh_recording_status()
+            return
+
+        if event.state == RecordingState.STOPPED:
+            self._recording_sessions.pop(event.device_serial, None)
+            self._stop_recording_timers_if_idle()
+            self.status_label.setText(status_recording_finished(event.device_serial))
+            return
+
+        if event.state == RecordingState.FAILED:
+            self._recording_sessions.pop(event.device_serial, None)
+            self._stop_recording_timers_if_idle()
+            self.status_label.setText(status_recording_failed(event.device_serial))
+
+    def _stop_recording_timers_if_idle(self):
+        if self._recording_sessions:
+            return
+        self.recording_status_timer.stop()
+        self.recording_reminder_timer.stop()
+
+    def _refresh_recording_status(self):
+        if not self._recording_sessions:
+            return
+
+        now = datetime.now()
+        elapsed_seconds = max(
+            int((now - session.started_at).total_seconds())
+            for session in self._recording_sessions.values()
+        )
+        elapsed_text = self._format_elapsed_seconds(elapsed_seconds)
+
+        if len(self._recording_sessions) == 1:
+            device_serial = next(iter(self._recording_sessions))
+            self.status_label.setText(status_recording_active(device_serial, elapsed_text))
+            return
+
+        self.status_label.setText(
+            status_recording_active_multi(len(self._recording_sessions), elapsed_text)
+        )
+
+    def _check_long_recording_reminders(self):
+        if not self._recording_sessions:
+            return
+        if self._is_foreground_fullscreen():
+            return
+
+        now = datetime.now()
+        for device_serial, session in self._recording_sessions.items():
+            elapsed_seconds = int((now - session.started_at).total_seconds())
+            if elapsed_seconds < self.LONG_RECORDING_REMINDER_SECONDS or session.reminder_sent:
+                continue
+            self._show_tray_notification(
+                tray_recording_reminder_title(),
+                tray_recording_reminder_message(
+                    device_serial,
+                    self._format_elapsed_seconds(elapsed_seconds),
+                ),
+                icon=QSystemTrayIcon.MessageIcon.Warning,
+                timeout=6000,
+            )
+            session.reminder_sent = True
+
+    def _is_foreground_fullscreen(self) -> bool:
+        return is_foreground_fullscreen(self)
+
+    def _show_tray_notification(self, title: str, message: str, *, icon, timeout: int = 5000):
+        show_tray_message(self, title, message, icon=icon, timeout=timeout)
+
+    def _format_elapsed_seconds(self, seconds: int) -> str:
+        hours, remainder = divmod(max(seconds, 0), 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
     # ================ 文件传输 UI ================
     @pyqtSlot()

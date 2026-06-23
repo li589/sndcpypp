@@ -61,7 +61,7 @@ def collect_ui_settings(window, settings: dict[str, Any]) -> dict[str, Any]:
         "max_size": window.max_size_combo.currentText(),
         "lock_ori": window.lock_ori_combo.currentIndex(),
         "rec_ori": getattr(window, "rec_ori_combo", QComboBox()).currentIndex(),
-        "rec_bg_mode": getattr(window, "rec_bg_check", QCheckBox()).isChecked(),
+        "rec_bg_mode": True,
         "adb_extra": settings.get("adb_extra", ""),
         "player_extra": settings.get("player_extra", ""),
         "scrcpy_extra": settings.get("scrcpy_extra", ""),
@@ -97,6 +97,6 @@ def apply_ui_settings(window, settings: dict[str, Any]) -> None:
     if hasattr(window, "rec_ori_combo"):
         window.rec_ori_combo.setCurrentIndex(int(settings.get("rec_ori", 0)))
     if hasattr(window, "rec_bg_check"):
-        window.rec_bg_check.setChecked(settings.get("rec_bg_mode", True))
+        window.rec_bg_check.setChecked(True)
     if hasattr(window, "local_down_edit"):
         window.local_down_edit.setText(settings.get("download_dir", os.path.abspath(".")))

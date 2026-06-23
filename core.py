@@ -7,9 +7,11 @@ from app.domain.models.file_info import FileInfo
 from app.domain.models.operation_requests import (
     BrowseFilesRequest,
     ConsoleCommandRequest,
+    ConsoleTargetKind,
     PullFileRequest,
     PushFileRequest,
     RecordingRequest,
+    RecordingStateEvent,
     RuntimeConfigurationRequest,
     RoutingRequest,
 )
@@ -41,6 +43,7 @@ class CoreController(QObject):
     files_listed_detailed = pyqtSignal(str, list, bool)
     symlink_resolved = pyqtSignal(str, str, bool)
     file_transfer_progress = pyqtSignal(str, str, int)
+    recording_state_changed = pyqtSignal(object)
 
     def __init__(self, adb_path: str, player_path: str, sndcpy_dir: str):
         super().__init__()
@@ -99,6 +102,7 @@ class CoreController(QObject):
         self._route_service.operation_completed.connect(self.operation_completed.emit)
         self._route_service.player_process_exited.connect(self.player_process_exited.emit)
         self._recording_service.log_message.connect(self.log_message.emit)
+        self._recording_service.recording_state_changed.connect(self.recording_state_changed.emit)
         self._file_manager_service.files_listed.connect(self.files_listed.emit)
         self._file_manager_service.files_listed_detailed.connect(self.files_listed_detailed.emit)
         self._file_manager_service.symlink_resolved.connect(self.symlink_resolved.emit)
@@ -350,19 +354,19 @@ class CoreController(QObject):
     def request_restart_adb(self):
         self.restart_adb()
 
-    def execute_console_target(self, target: str, command_str: str):
-        device_serial = ""
+    def execute_console_target(self, request: ConsoleCommandRequest):
+        device_serial = request.device_serial
         cmd_type = "adb"
-
-        if target == "[Scrcpy命令]":
+        if request.target_kind == ConsoleTargetKind.SCRCPY:
             cmd_type = "scrcpy"
-        elif target and target != "[ADB无设备]":
-            device_serial = target
+            device_serial = ""
+        elif request.target_kind == ConsoleTargetKind.ADB_GLOBAL:
+            device_serial = ""
 
-        self.execute_custom_cmd(device_serial, command_str, cmd_type)
+        self.execute_custom_cmd(device_serial, request.command_str, cmd_type)
 
     def request_execute_console_target(self, request: ConsoleCommandRequest):
-        self.execute_console_target(request.target, request.command_str)
+        self.execute_console_target(request)
 
     # Legacy/internal compatibility
     def _run_adb_command_internal(self, command: List[str], description: str = "") -> Optional[subprocess.CompletedProcess]:

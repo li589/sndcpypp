@@ -2,17 +2,21 @@
 
 Sndcpy++ 是一个基于 Python 和 PyQt6 的桌面控制中心，用于统一管理 Android 设备的音频路由、视频投屏、录制、文件传输和调试命令。
 
-当前项目定位不是从零重写 scrcpy/sndcpy 协议，而是以桌面应用的方式整合 `adb`、`sndcpy`、`scrcpy`、本地播放器，并逐步演进到自研音频播放与更稳定的设备会话管理。
+当前项目定位不是从零重写 scrcpy/sndcpy 协议，而是以桌面应用的方式整合 `adb`、`sndcpy`、`scrcpy`、本地播放器，并逐步演进到更稳定的设备会话管理与可替换的音频后端。
 
 ## 当前能力
 
 - 图形化设备管理
 - 一键启动音频/视频路由
 - 音视频录制
+- 录制始终后台进行，不会为录制额外弹出新窗口
+- 录制状态栏计时与长时间录制托盘提醒
 - Android 文件浏览、上传、下载
 - ADB 命令调试控制台
 - 系统托盘驻留
 - USB 热插拔自动检测
+- USB 监测不可用时的启动兜底
+- 后台任务状态观测与失败日志
 - 预留 `AudioRouter` 原生音频后端
 
 ## 当前状态
@@ -23,13 +27,14 @@ Sndcpy++ 是一个基于 Python 和 PyQt6 的桌面控制中心，用于统一�
 - 视频端：`scrcpy.exe`
 - 音频端：`VLC` 或未来的 `AudioRouter`
 
-本仓库正在进行第一阶段重构，目标包括：
+本仓库目前处于渐进式重构中，已经完成的重点包括：
 
 - 建立 `app/` 分层结构
-- 抽离领域模型与命令构建逻辑
-- 保留现有运行方式兼容
-- 后续逐步拆分 `main.py` 与 `core.py`
-- 保持 `UsbMonitor.py` 原文件不拆分，方便外部复用
+- 抽离领域模型、服务层与 UI 协调层
+- 用 `CoreController` 统一收口主流程门面
+- 用 `BackgroundTaskRunner` 统一收口后台线程并提供观测能力
+- 将 USB 监听实现迁移到 `app/infrastructure/adb/UsbMonitor.py`
+- 让录制状态与控制台目标切换使用显式事件/请求模型，而不是依赖展示文案
 
 ## 目录说明
 
@@ -40,7 +45,7 @@ AudioRouter/    C++ 原生音频接收/播放实验项目
 Sndcpy/         adb/scrcpy/sndcpy.apk 等运行资源
 main.py         现有 GUI 主入口
 core.py         现有后端控制核心
-UsbMonitor.py   保留的 USB 监听通用模块
+app/infrastructure/adb/UsbMonitor.py   USB 监听通用模块
 ```
 
 ## 依赖
@@ -74,13 +79,13 @@ python -m pip install -r requirements.txt
 
 ## 运行方式
 
-兼容旧入口：
+当前桌面程序入口：
 
 ```bash
 python main.py
 ```
 
-新增重构入口：
+包方式入口：
 
 ```bash
 python -m app.main
@@ -91,7 +96,7 @@ python -m app.main
 静态编译检查：
 
 ```powershell
-.\venv\Scripts\python.exe -m py_compile main.py core.py UsbMonitor.py
+.\venv\Scripts\python.exe -m compileall .\main.py .\core.py .\app .\tests
 ```
 
 启动主程序：
@@ -113,24 +118,26 @@ python -m app.main
 
 当前仓库已经完成以下验证：
 
-- `main.py`、`core.py`、`UsbMonitor.py` 与 `app/` 下重构模块的语法编译检查
-- 四个页面组件的实例化冒烟测试
-- 主窗口构造与延迟初始化测试
-- 托盘隐藏、恢复显示、强制退出链路测试
+- `main.py`、`core.py`、`app/`、`tests/` 的编译检查
+- `31` 项 `unittest` 回归测试
+- 设备页、文件页、运行时设置、设备运维协调层的纯逻辑测试
+- 主窗口构造与 USB 监听失败兜底测试
+- 后台任务观测、失败记录与历史清理测试
+- 录制后台无窗口、录制状态事件与长时间录制提醒测试
 
 当前尚未覆盖的部分：
 
 - 真实 Android 设备连接下的 `adb devices`
 - `sndcpy.apk` 安装与启动
 - 音频/视频路由
-- 录制开始/停止
+- 录制开始/停止与真机录制文件产出
 - 真机文件上传下载
 
 ## 重构方向
 
-- 第一阶段：抽离模型、命令构建、入口骨架和文档
-- 第二阶段：拆分设备、音频、视频、录制、文件传输服务
-- 第三阶段：接入 `AudioRouter` 作为默认播放器后端
+- 第一阶段：完成分层抽离、核心门面收口和主窗口瘦身
+- 第二阶段：继续减少 `main.py` 中剩余的参数拼装与接线代码
+- 第三阶段：接入 `AudioRouter` 作为标准音频后端
 - 第四阶段：评估 Android 端自研音频采集服务
 
 ## 相关文档

@@ -7,21 +7,23 @@ Sndcpy++ 采用渐进式分层重构策略，在不破坏现有功能的前提�
 当前阶段重点：
 
 - 保留现有 GUI 和控制逻辑可运行
-- 抽取通用模型与命令构建逻辑
+- 抽取通用模型、服务层与命令构建逻辑
 - 建立新的 `app/` 包结构
-- 明确后续服务拆分边界
-- 保持 `UsbMonitor.py` 原文件不拆分
+- 明确 `main.py -> core.py -> services -> infrastructure` 边界
+- 统一后台任务入口与任务观测能力
 
 ## Current Runtime Topology
 
 ```text
 main.py (PyQt6 GUI)
   -> core.py (控制编排)
+    -> app/services/*
+    -> app/infrastructure/process/task_runner.py
     -> adb.exe
     -> scrcpy.exe
     -> sndcpy.apk
     -> VLC / AudioRouter
-  -> UsbMonitor.py
+  -> app/infrastructure/adb/UsbMonitor.py
 ```
 
 ## Target Topology
@@ -37,7 +39,6 @@ app.main
 兼容层:
 main.py
 core.py
-UsbMonitor.py
 ```
 
 ## Refactor Layers
@@ -72,6 +73,7 @@ UsbMonitor.py
 
 - `app/domain/enums/file_type.py`
 - `app/domain/models/file_info.py`
+- `app/domain/models/operation_requests.py`
 
 ### Infrastructure Layer
 
@@ -80,14 +82,13 @@ UsbMonitor.py
 当前已抽出：
 
 - `app/infrastructure/adb/command_builder.py`
+- `app/infrastructure/adb/adb_client.py`
+- `app/infrastructure/adb/path_resolver.py`
+- `app/infrastructure/adb/UsbMonitor.py`
 - `app/infrastructure/process/task_runner.py`
-
-后续计划：
-
-- `process_registry.py`
-- `process_supervisor.py`
-- `settings_store.py`
-- `ls_parser.py`
+- `app/infrastructure/process/registry.py`
+- `app/infrastructure/process/supervisor.py`
+- `app/infrastructure/config/settings_store.py`
 
 ## Current Compatibility Strategy
 
@@ -97,7 +98,7 @@ UsbMonitor.py
 - `app/main.py` 新增为重构入口
 - `core.py` 继续保留控制逻辑
 - `core.py` 已开始依赖 `app/` 中的抽离模块
-- `UsbMonitor.py` 维持单文件，供主程序和其他项目共用
+- USB 监听维持单文件实现，但路径已迁移到 `app/infrastructure/adb/UsbMonitor.py`
 
 ## Interaction Flow
 
@@ -112,7 +113,7 @@ UsbMonitor.py
 | 独立音频启动 | `start_audio_only()` | `request_start_audio_route()` | `RouteService.start_audio_route()` | `adb` / 播放器 |
 | 独立音频停止 | `stop_audio_only()` | `request_stop_audio_routes()` | `RouteService.stop_audio()` | 播放器 / `adb shell am force-stop` |
 | 停止路由 | `stop_routing()` | `request_stop_streaming()` | `RouteService.stop_streaming()` | `scrcpy.exe` / 播放器 / `adb forward --remove` |
-| 开始录制 | `start_recording_ui()` | `request_start_recording(RecordingRequest)` | `RecordingService.start_recording()` | `scrcpy --record` |
+| 开始录制 | `start_recording_ui()` | `request_start_recording(RecordingRequest)` | `RecordingService.start_recording()` + `RecordingStateEvent` | `scrcpy --record --no-playback` |
 | 停止录制 | `stop_recording_ui()` | `request_stop_recording()` | `RecordingService.stop_recording()` | 录制进程 |
 | 文件浏览 | `refresh_file_list()` | `request_list_device_files(BrowseFilesRequest)` | `FileManagerService.list_device_files_detailed()` | `adb shell ls -all` |
 | 文件上传 | `handle_files_dropped()` | `request_push_file(PushFileRequest)` | `FileManagerService.push_file()` | `adb push` |
@@ -128,6 +129,7 @@ UsbMonitor.py
 - 所有通过 `ADBClient.run_logged()` 发出的 ADB 命令统一串行，避免 `adb devices`、`kill-server`、`forward`、`shell` 互相打架。
 - 同一设备的录制流程使用设备锁保护，保证“停止旧录制 -> 处理音频冲突 -> 启动新录制”按顺序执行。
 - 同一设备的录音和独立音频路由存在资源冲突，录音启动时必须先暂停音频路由，录制结束后再尝试恢复。
+- 录制始终使用后台无预览模式，避免在已有路由窗口之外再拉起新的录制窗口。
 
 ### Can Run In Parallel
 
@@ -163,6 +165,7 @@ UsbMonitor.py
    - 补充按钮冷却，避免快速连点
 3. `录制`
    - 录制命令拼装与能力探测移到后台
+   - 固定使用无预览录制，避免新增录制窗口
    - 保留同设备录制锁，避免竞态
 4. `重启ADB`
    - 改成“立即反馈 + 后台执行 + 异步刷新设备”
@@ -330,6 +333,46 @@ UsbMonitor.py
 - 运行时配置、路由、录制、文件传输、控制台命令这类多参数动作优先通过请求对象进入 `core`
 - 内部 service、进程注册表、命令构造器都留在 `core.py` 之后，不再由 UI 直接触达
 
+## Event And Request Contracts
+
+当前主流程中的程序语义通过显式请求对象和事件对象流转，而不是依赖日志展示文案：
+
+- `ConsoleCommandRequest`
+  - 使用 `ConsoleTargetKind` 表达目标类型
+  - `main.py` 负责把控制台下拉框展示文本映射为语义化目标
+  - `core.py` 不再解析 `"[Scrcpy命令]"` 这类 UI 文案
+- `RecordingStateEvent`
+  - 使用 `RecordingState.STARTED / STOPPED / FAILED`
+  - `RecordingService` 发出录制状态事件
+  - `main.py` 负责更新状态栏计时、托盘提醒和录制会话表
+- `log_message`
+  - 仅承担控制台输出与人工可读审计信息
+  - 不承担程序控制流判断
+
+## Background Task Observability
+
+当前后台任务统一经过 `app/infrastructure/process/task_runner.py` 中的 `BackgroundTaskRunner` 发起，除了代替裸 `daemon` 线程，还额外承担了轻量任务注册表的职责。
+
+当前能力：
+
+- 为任务记录 `group`、状态、起止时间和异常文本
+- 提供 `snapshot()`、`snapshot_by_group()`、`get_task()`、`wait_all()`
+- 提供 `recent_failed_tasks()` 和 `clear_history()`
+- 通过监听器把失败任务回灌到 `CoreController.log_message`
+
+当前 `CoreController` 暴露的观测接口：
+
+- `get_background_task_snapshot()`
+- `get_background_tasks_by_group()`
+- `get_recent_background_failures()`
+- `clear_background_task_history()`
+
+这意味着：
+
+- UI 层不需要直接管理后台线程对象
+- 后台任务失败可以进入统一控制台日志
+- 后续如果做“任务状态面板”或调试页，可以直接复用现有观测接口
+
 ## Next Refactor Steps
 
 1. 继续减少 `main.py` 中的业务参数拼装代码
@@ -341,6 +384,5 @@ UsbMonitor.py
 ## Design Constraints
 
 - 不破坏现有用户工作流
-- 不拆分 `UsbMonitor.py`
 - 优先做可增量迁移的模块
 - 先保证兼容，再做深度解耦
