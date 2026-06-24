@@ -111,8 +111,10 @@ def status_usb_refresh_pending() -> str:
 def status_operation_result(operation: str, success: bool) -> str | None:
     if operation == "install":
         return "APK安装成功" if success else "APK安装失败"
-    if operation in ["audio_route", "video_route"]:
-        return "路由启动成功" if success else "路由启动失败"
+    if operation == "audio_route":
+        return "音频路由启动成功" if success else "音频路由启动失败"
+    if operation == "video_route":
+        return "画面路由启动成功" if success else "画面路由启动失败"
     return None
 
 

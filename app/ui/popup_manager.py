@@ -16,6 +16,7 @@ from app.ui.interaction_helpers import (
     recording_audio_conflict_message,
     resolve_conflict_choice,
 )
+from app.ui.runtime_settings import get_audio_router_recommended_args
 
 
 class PopupManager:
@@ -48,11 +49,15 @@ class PopupManager:
     def open_param_settings(self, cmd_type: str, current_val: str) -> str | None:
         titles = {"adb": "ADB", "player": "播放器", "scrcpy": "Scrcpy"}
         title = titles.get(cmd_type, "")
+        quick_fill_actions: list[tuple[str, str]] = []
+        if cmd_type == "player":
+            quick_fill_actions.append(("AudioRouter 推荐", get_audio_router_recommended_args()))
         dialog = ParamSettingsDialog(
             self.parent,
             title=f"{title} 附加参数设置",
             param_name=title,
             current_val=current_val,
+            quick_fill_actions=quick_fill_actions,
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._audit(f"参数弹窗: 已保存 {title} 附加参数")

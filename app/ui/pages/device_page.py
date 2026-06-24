@@ -80,7 +80,7 @@ class DeviceControlPage(QWidget):
             return row, edit
 
         adb_row, self.adb_path_edit = create_path_row("ADB路径:", "留空自动优先外部ADB，失败回退内置", on_browse_adb, on_open_adb_settings)
-        player_row, self.player_path_edit = create_path_row("播放器路径:", "默认/VLC播放器路径", on_browse_player, on_open_player_settings)
+        player_row, self.player_path_edit = create_path_row("播放器路径:", "默认优先VLC，自动探测 AudioRouter", on_browse_player, on_open_player_settings)
         sndcpy_row, self.sndcpy_dir_edit = create_path_row("Sndcpy目录:", "Sndcpy文件夹路径", on_browse_sndcpy_dir, on_open_scrcpy_settings)
         path_layout.addLayout(adb_row)
         path_layout.addLayout(player_row)

@@ -4,6 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.domain.enums.file_type import FileType
+from app.domain.models.file_info import FileInfo
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
 from app.services.file_manager_service import FileManagerService
@@ -16,6 +18,27 @@ class _ImmediateTaskRunner:
         if target is not None:
             target(*args)
         return SimpleNamespace()
+
+
+class _DeferredSymlinkTaskRunner:
+    def __init__(self):
+        self._deferred: list[tuple[object, tuple]] = []
+
+    def start(self, name, group=None, target=None, args=()):
+        del group
+        if target is None:
+            return SimpleNamespace()
+        if name == "files-resolve-symlinks":
+            self._deferred.append((target, args))
+        else:
+            target(*args)
+        return SimpleNamespace()
+
+    def run_deferred(self):
+        queued = list(self._deferred)
+        self._deferred.clear()
+        for target, args in queued:
+            target(*args)
 
 
 class _FakeCommandManager:
@@ -92,6 +115,65 @@ class FileTransferBehaviorTests(unittest.TestCase):
 
         self.assertEqual(progress_events[-1][0], "error")
         self.assertIn("denied", progress_events[-1][1])
+
+    def test_stale_symlink_resolution_is_ignored_after_directory_switch(self):
+        registry = ProcessRegistry()
+        task_runner = _DeferredSymlinkTaskRunner()
+        parser_map = {
+            "old-link": FileInfo(
+                name="shared-link",
+                file_type=FileType.SYMLINK,
+                type_char="l",
+                permissions="lrwxrwxrwx",
+                owner="shell",
+                group="shell",
+                size=0,
+                date_str="2026-01-01",
+                symlink_target="old-target-file",
+            ),
+            "new-link": FileInfo(
+                name="shared-link",
+                file_type=FileType.SYMLINK,
+                type_char="l",
+                permissions="lrwxrwxrwx",
+                owner="shell",
+                group="shell",
+                size=0,
+                date_str="2026-01-01",
+                symlink_target="new-target-dir",
+            ),
+        }
+        current_listing = {"stdout": "old-link\n"}
+
+        service = FileManagerService(
+            cmd_manager=_FakeCommandManager(),
+            ls_parser=SimpleNamespace(parse_line=lambda line: parser_map.get(line)),
+            transfer_progress_parser=None,
+            process_registry=registry,
+            process_supervisor=ProcessSupervisor(registry),
+            task_runner=task_runner,
+            run_adb_command=lambda cmd, desc: SimpleNamespace(
+                returncode=0,
+                stdout=current_listing["stdout"],
+                stderr="",
+            ),
+            is_running=lambda: True,
+        )
+        resolved_events: list[tuple[str, str, bool]] = []
+        service.symlink_resolved.connect(
+            lambda device_serial, name, is_dir: resolved_events.append((device_serial, name, is_dir))
+        )
+
+        with patch(
+            "app.services.file_manager_service._SymlinkResolverWorker._probe_type",
+            lambda self, remote_path: remote_path.endswith("-dir"),
+        ):
+            service.list_device_files_detailed("device-1", "/old/")
+            current_listing["stdout"] = "new-link\n"
+            service.list_device_files_detailed("device-1", "/new/")
+            task_runner.run_deferred()
+
+        self.assertEqual(resolved_events, [("device-1", "shared-link", True)])
 
 
 if __name__ == "__main__":

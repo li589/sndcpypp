@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QLineEdit,
     QListWidget,
     QSpinBox,
@@ -19,10 +20,13 @@ from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
 from app.ui.device_service_coordinator import finalize_operation_ui, submit_adb_service_action
 from app.ui.file_page_controller import FilePageController
+from app.ui.popup_manager import PopupManager
 from app.ui.runtime_settings import (
     apply_ui_settings,
     build_runtime_configuration_request,
     collect_ui_settings,
+    get_audio_router_candidate_paths,
+    get_audio_router_recommended_args,
     resolve_runtime_paths,
 )
 from core import FileType
@@ -121,21 +125,21 @@ class DevicePageControllerTests(unittest.TestCase):
 class DeviceRuntimeCoordinatorTests(unittest.TestCase):
     def test_apply_validation_result_ui_triggers_first_ready_once(self):
         statuses: list[str] = []
-        restored: list[str] = []
+        restored: list[bool] = []
         first_ready: list[str] = []
 
         result = apply_validation_result_ui(
             [1, 1, 1],
             is_first_startup=True,
             set_status=statuses.append,
-            restore_validation_actions=lambda: restored.append("done"),
+            restore_validation_actions=restored.append,
             on_first_ready=lambda: first_ready.append("ready"),
         )
 
         self.assertTrue(result.adb_valid)
         self.assertTrue(result.are_paths_ready)
         self.assertFalse(result.next_first_startup)
-        self.assertEqual(restored, ["done"])
+        self.assertEqual(restored, [True])
         self.assertEqual(first_ready, ["ready"])
         self.assertIn("路径验证", statuses[0])
 
@@ -146,12 +150,24 @@ class DeviceRuntimeCoordinatorTests(unittest.TestCase):
             [1, 0, 1],
             is_first_startup=True,
             set_status=lambda _: None,
-            restore_validation_actions=lambda: None,
+            restore_validation_actions=lambda _: None,
             on_first_ready=lambda: first_ready.append("ready"),
         )
 
         self.assertFalse(result.are_paths_ready)
         self.assertEqual(first_ready, [])
+
+    def test_apply_validation_result_ui_restores_actions_with_current_ready_state(self):
+        restored: list[bool] = []
+
+        apply_validation_result_ui(
+            [1, 0, 1],
+            is_first_startup=False,
+            set_status=lambda _: None,
+            restore_validation_actions=restored.append,
+        )
+
+        self.assertEqual(restored, [False])
 
 
 class DeviceServiceCoordinatorTests(unittest.TestCase):
@@ -250,6 +266,38 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(os.path.basename(sndcpy_dir), "Sndcpy")
         self.assertEqual(resolver_calls, [("", sndcpy_dir)])
 
+    def test_resolve_runtime_paths_falls_back_to_audio_router_when_vlc_is_missing(self):
+        resolver_calls: list[tuple[str, str]] = []
+
+        class _Resolver:
+            def resolve(self, adb_path, sndcpy_dir):
+                resolver_calls.append((adb_path, sndcpy_dir))
+                return SimpleNamespace(path="resolved-adb")
+
+        audio_router_path = get_audio_router_candidate_paths("D:/App")[2]
+
+        with patch("app.ui.runtime_settings.shutil.which", return_value=None), patch(
+            "app.ui.runtime_settings.os.path.isfile",
+            side_effect=lambda path: os.path.abspath(path) == audio_router_path,
+        ):
+            resolution, player_path, sndcpy_dir = resolve_runtime_paths(
+                "",
+                "",
+                "",
+                adb_path_resolver=_Resolver(),
+                app_base_dir="D:/App",
+            )
+
+        self.assertEqual(resolution.path, "resolved-adb")
+        self.assertEqual(player_path, audio_router_path)
+        self.assertEqual(resolver_calls, [("", sndcpy_dir)])
+
+    def test_audio_router_recommended_args_match_compatible_vlc_style_flags(self):
+        self.assertEqual(
+            get_audio_router_recommended_args(),
+            "-Idummy --demux rawaud --network-caching=200 --play-and-exit",
+        )
+
     def test_collect_and_apply_ui_settings_round_trip(self):
         window = self._build_window_stub()
         window.adb_path_edit.setText("adb.exe")
@@ -304,6 +352,30 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(request.adb_extra, "--adb")
         self.assertEqual(request.player_extra, "--player")
         self.assertEqual(request.scrcpy_extra, "--scrcpy")
+
+    def test_popup_manager_exposes_audio_router_quick_fill_for_player_params(self):
+        captured: dict[str, object] = {}
+
+        class _FakeDialog:
+            def __init__(self, parent=None, **kwargs):
+                del parent
+                captured.update(kwargs)
+
+            def exec(self):
+                return QDialog.DialogCode.Accepted
+
+            def get_value(self):
+                return "--filled"
+
+        with patch("app.ui.popup_manager.ParamSettingsDialog", _FakeDialog):
+            popup = PopupManager(parent=None)
+            value = popup.open_param_settings("player", "")
+
+        self.assertEqual(value, "--filled")
+        self.assertEqual(
+            captured["quick_fill_actions"],
+            [("AudioRouter 推荐", get_audio_router_recommended_args())],
+        )
 
 
 class FilePageControllerTests(unittest.TestCase):

@@ -50,7 +50,7 @@ class ADBCommandBuilder(QObject):
             "start_audio_player_cmd": ["{player_path}", "{player_extra}", "-Idummy", "--demux", "rawaud", "--network-caching=200", "--play-and-exit", "tcp://localhost:{port}"],
             "stop_audio_app_cmd": ["{adb_path}", "{adb_extra}", "-s", "{device_serial}", "shell", "am", "force-stop", "com.rom1v.sndcpy"],
             "remove_audio_forward_cmd": ["{adb_path}", "{adb_extra}", "-s", "{device_serial}", "forward", "--remove", "tcp:{port}"],
-            "start_video_scrcpy_cmd": ["{scrcpy_path}", "{scrcpy_extra}", "-s", "{device_serial}", "--video-bit-rate", "{video_bitrate}", "{max_size_flag}", "{max_size_val}", "{lock_ori_flag}", "{lock_ori_val}", "{fps_flag}", "{stay_awake_flag}", "{screen_off_flag}", "--pause-on-exit=if-error"],
+            "start_video_scrcpy_cmd": ["{scrcpy_path}", "{scrcpy_extra}", "-s", "{device_serial}", "--video-bit-rate", "{video_bitrate}", "{max_size_flag}", "{max_size_val}", "{lock_ori_flag}", "{lock_ori_val}", "{fps_flag}", "{stay_awake_flag}", "{screen_off_flag}", "--force-adb-forward", "--no-audio"],
             "restart_adb_kill_cmd": ["{adb_path}", "{adb_extra}", "kill-server"],
             "restart_adb_start_cmd": ["{adb_path}", "{adb_extra}", "start-server"],
             "list_files_detailed_cmd": ["{adb_path}", "{adb_extra}", "-s", "{device_serial}", "shell", 'ls -all "{remote_path}"'],

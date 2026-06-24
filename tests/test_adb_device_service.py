@@ -20,6 +20,7 @@ class _FakeCommandManager:
     def __init__(self, values=None):
         self._values = {
             "adb_path": "adb.exe",
+            "adb_extra": "",
             "player_path": "player.exe",
             "sndcpy_dir": r"C:\sndcpy",
             "scrcpy_path": "",
@@ -145,6 +146,7 @@ class ADBDeviceServiceTests(unittest.TestCase):
                 stdout="",
                 stderr="Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]",
             ),
+            "检查 sndcpy 安装状态 (device-1)": SimpleNamespace(returncode=1, stdout="", stderr=""),
             "卸载旧版本": SimpleNamespace(returncode=0, stdout="Success", stderr=""),
             "重新安装APK": SimpleNamespace(returncode=0, stdout="Success", stderr=""),
         }
@@ -159,7 +161,7 @@ class ADBDeviceServiceTests(unittest.TestCase):
         service.install_apk("device-1")
         task_runner.tasks.pop(0)()
 
-        self.assertEqual(calls, ["直接安装APK (device-1)", "卸载旧版本", "重新安装APK"])
+        self.assertEqual(calls, ["检查 sndcpy 安装状态 (device-1)", "直接安装APK (device-1)", "卸载旧版本", "重新安装APK"])
         self.assertEqual(completed, [("install", True)])
         self.assertTrue(any(level == "warning" and "尝试卸载旧版本并重新安装" in message for message, level in logs))
 
@@ -168,10 +170,13 @@ class ADBDeviceServiceTests(unittest.TestCase):
         calls: list[str] = []
         completed: list[tuple[str, bool]] = []
         logs: list[tuple[str, str]] = []
+        responses = {
+            "检查 sndcpy 安装状态 (device-1)": SimpleNamespace(returncode=1, stdout="", stderr=""),
+            "直接安装APK (device-1)": SimpleNamespace(returncode=1, stdout="", stderr="adb: error: device offline"),
+        }
         service = ADBDeviceService(
             cmd_manager=_FakeCommandManager(),
-            run_adb_command=lambda cmd, desc: calls.append(desc)
-            or SimpleNamespace(returncode=1, stdout="", stderr="adb: error: device offline"),
+            run_adb_command=lambda cmd, desc: calls.append(desc) or responses[desc],
             task_runner=task_runner,
         )
         service.operation_completed.connect(lambda operation, success: completed.append((operation, success)))
@@ -180,9 +185,56 @@ class ADBDeviceServiceTests(unittest.TestCase):
         service.install_apk("device-1")
         task_runner.tasks.pop(0)()
 
-        self.assertEqual(calls, ["直接安装APK (device-1)"])
+        self.assertEqual(calls, ["检查 sndcpy 安装状态 (device-1)", "直接安装APK (device-1)"])
         self.assertEqual(completed, [("install", False)])
         self.assertTrue(any(level == "error" and "device offline" in message for message, level in logs))
+
+    def test_install_apk_treats_existing_package_as_success(self):
+        task_runner = _QueuedTaskRunner()
+        completed: list[tuple[str, bool]] = []
+        logs: list[tuple[str, str]] = []
+        responses = [
+            SimpleNamespace(returncode=0, stdout="package:/data/app/com.rom1v.sndcpy/base.apk", stderr=""),
+            SimpleNamespace(returncode=1, stdout="", stderr="Failure [INSTALL_FAILED_ALREADY_EXISTS]"),
+        ]
+        service = ADBDeviceService(
+            cmd_manager=_FakeCommandManager(),
+            run_adb_command=lambda cmd, desc: responses.pop(0),
+            task_runner=task_runner,
+        )
+        service.operation_completed.connect(lambda operation, success: completed.append((operation, success)))
+        service.log_message.connect(lambda message, level: logs.append((message, level)))
+
+        service.install_apk("device-1")
+        task_runner.tasks.pop(0)()
+
+        self.assertEqual(completed, [("install", True)])
+        self.assertTrue(any(level == "info" and "已存在 sndcpy" in message for message, level in logs))
+
+    def test_install_apk_waits_for_package_to_appear_after_user_confirms_on_device(self):
+        task_runner = _QueuedTaskRunner()
+        completed: list[tuple[str, bool]] = []
+        logs: list[tuple[str, str]] = []
+        responses = [
+            SimpleNamespace(returncode=1, stdout="", stderr=""),
+            SimpleNamespace(returncode=1, stdout="", stderr="Performing Streamed Install"),
+            SimpleNamespace(returncode=1, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="package:/data/app/com.rom1v.sndcpy/base.apk", stderr=""),
+        ]
+        service = ADBDeviceService(
+            cmd_manager=_FakeCommandManager(),
+            run_adb_command=lambda cmd, desc: responses.pop(0),
+            task_runner=task_runner,
+        )
+        service.operation_completed.connect(lambda operation, success: completed.append((operation, success)))
+        service.log_message.connect(lambda message, level: logs.append((message, level)))
+
+        service.install_apk("device-1")
+        with patch("app.services.adb_device_service.time.sleep", lambda _: None):
+            task_runner.tasks.pop(0)()
+
+        self.assertEqual(completed, [("install", True)])
+        self.assertTrue(any(level == "info" and "等待手机端确认安装" in message for message, level in logs))
 
 
 if __name__ == "__main__":

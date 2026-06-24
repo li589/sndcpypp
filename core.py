@@ -139,6 +139,13 @@ class CoreController(QObject):
         self.stop_file_transfers(None)
         self.log_message.emit("ADB控制器已安全停止", "info")
 
+    def wait_for_background_tasks(self, timeout: float | None = None) -> bool:
+        return self._task_runner.wait_all(timeout=timeout)
+
+    def request_shutdown_and_wait(self, timeout: float | None = None) -> bool:
+        self.stop()
+        return self.wait_for_background_tasks(timeout=timeout)
+
     def _handle_task_runner_event(self, task: TaskSnapshot):
         if task.status != "failed":
             return
@@ -246,18 +253,7 @@ class CoreController(QObject):
         self.start_audio_route(device_serial, port)
 
     def start_routing_session(self, request: RoutingRequest):
-        if request.enable_audio:
-            self.start_audio_route(request.device_serial, port=request.audio_port)
-        if request.enable_video:
-            self.start_video_route(
-                device_serial=request.device_serial,
-                bitrate=request.video_bitrate,
-                max_size=request.max_size,
-                lock_ori_index=request.lock_ori_index,
-                show_fps=request.show_fps,
-                stay_awake=request.stay_awake,
-                turn_screen_off=request.turn_screen_off,
-            )
+        self._route_service.start_routing_session(request)
 
     def request_start_routing_session(self, request: RoutingRequest):
         self.start_routing_session(request)
@@ -337,6 +333,12 @@ class CoreController(QObject):
 
     # ADB process management
     def force_kill_adb(self):
+        route_service = getattr(self, "_route_service", None)
+        stop_streaming_sync = getattr(route_service, "stop_streaming_sync", None)
+        if callable(stop_streaming_sync):
+            stop_streaming_sync(None)
+        else:
+            self.stop_streaming(None)
         self._adb_device_service.force_kill_adb()
 
     def request_force_kill_adb(self):
@@ -349,6 +351,12 @@ class CoreController(QObject):
         self.start_adb_server()
 
     def restart_adb(self):
+        route_service = getattr(self, "_route_service", None)
+        stop_streaming_sync = getattr(route_service, "stop_streaming_sync", None)
+        if callable(stop_streaming_sync):
+            stop_streaming_sync(None)
+        else:
+            self.stop_streaming(None)
         self._adb_device_service.restart_adb()
 
     def request_restart_adb(self):

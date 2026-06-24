@@ -18,14 +18,14 @@ def apply_validation_result_ui(
     *,
     is_first_startup: bool,
     set_status: Callable[[str], None],
-    restore_validation_actions: Callable[[], None],
+    restore_validation_actions: Callable[[bool], None],
     on_first_ready: Callable[[], None] | None = None,
 ) -> ValidationUiResult:
     adb_valid, player_valid, sndcpy_valid = [bool(value) for value in results]
     are_paths_ready = adb_valid and player_valid and sndcpy_valid
 
     set_status(validation_status_text(adb_valid, player_valid, sndcpy_valid))
-    restore_validation_actions()
+    restore_validation_actions(are_paths_ready)
 
     if is_first_startup and are_paths_ready and on_first_ready is not None:
         on_first_ready()

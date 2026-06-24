@@ -1,5 +1,7 @@
 import sys
 import os
+import json
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -96,6 +98,39 @@ from app.ui.runtime_settings import (
     resolve_runtime_paths,
 )
 from core import CoreController, FileInfo
+
+
+# #region debug-point A:route-install-entry
+def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict[str, Any] | None = None) -> None:
+    env_path = os.path.join(os.path.abspath("."), ".dbg", "route-install-file-read.env")
+    server_url = "http://127.0.0.1:7777/event"
+    session_id = "route-install-file-read"
+    try:
+        with open(env_path, encoding="utf-8") as env_file:
+            for line in env_file.read().splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    server_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1]
+        payload = {
+            "sessionId": session_id,
+            "runId": "post-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": msg,
+            "data": data or {},
+        }
+        urllib.request.urlopen(
+            urllib.request.Request(
+                server_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=0.5,
+        ).read()
+    except Exception:
+        pass
+# #endregion
 
 
 @dataclass(slots=True)
@@ -424,9 +459,10 @@ class SndcpyGUI(QMainWindow):
     def _cooldown_buttons(self, buttons: list[QPushButton], ms: int = 900, restore_callback=None):
         cooldown_buttons(buttons, ms, restore_callback)
 
-    def _restore_validation_actions(self):
-        self.install_btn.setEnabled(self.are_paths_ready)
-        self.start_btn.setEnabled(self.are_paths_ready)
+    def _restore_validation_actions(self, paths_ready: bool | None = None):
+        ready_state = self.are_paths_ready if paths_ready is None else paths_ready
+        self.install_btn.setEnabled(ready_state)
+        self.start_btn.setEnabled(ready_state)
 
     def _restore_validation_button(self):
         self.validate_btn.setEnabled(True)
@@ -517,6 +553,18 @@ class SndcpyGUI(QMainWindow):
     @pyqtSlot()
     def install_sndcpy(self):
         device = self.get_selected_device()
+        # #region debug-point A:install-entry
+        _report_debug_event(
+            "A",
+            "main.install_sndcpy",
+            "[DEBUG] install action invoked",
+            {
+                "device": device or "",
+                "has_core_controller": self.core_controller is not None,
+                "selected_items": len(self.device_list.selectedItems()) if hasattr(self, "device_list") else -1,
+            },
+        )
+        # #endregion
         if device and self.core_controller:
             submit_device_start_action(
                 device,
@@ -532,6 +580,20 @@ class SndcpyGUI(QMainWindow):
     @pyqtSlot()
     def start_routing(self):
         device = self.get_selected_device()
+        # #region debug-point A:routing-entry
+        _report_debug_event(
+            "A",
+            "main.start_routing",
+            "[DEBUG] routing action invoked",
+            {
+                "device": device or "",
+                "has_core_controller": self.core_controller is not None,
+                "selected_items": len(self.device_list.selectedItems()) if hasattr(self, "device_list") else -1,
+                "audio_enabled": self.audio_check.isChecked(),
+                "video_enabled": self.video_check.isChecked(),
+            },
+        )
+        # #endregion
         if device and self.core_controller:
             submit_device_start_action(
                 device,
@@ -899,7 +961,8 @@ class SndcpyGUI(QMainWindow):
             self.usb_monitor.stop_monitoring()
         if self.core_controller:
             self.log_to_console(log_cleanup_processes(), "warning")
-            self.core_controller.request_shutdown()
+            if not self.core_controller.request_shutdown_and_wait(timeout=8):
+                self.log_to_console("后台清理超时，应用将继续退出。", "warning")
         if hasattr(self, 'scan_timer') and self.scan_timer.isActive():
             self.scan_timer.stop()
 

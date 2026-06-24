@@ -1,7 +1,10 @@
 import os
+import json
 import shutil
 import subprocess
 import tempfile
+import threading
+import urllib.request
 import uuid
 from typing import Callable, Optional
 
@@ -12,16 +15,50 @@ from app.infrastructure.fileops.ls_parser import LSAllParser
 from app.infrastructure.fileops.transfer_progress import TransferProgressParser
 
 
+# #region debug-point C:file-command
+def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
+    env_path = os.path.join(os.path.abspath("."), ".dbg", "route-install-file-read.env")
+    server_url = "http://127.0.0.1:7777/event"
+    session_id = "route-install-file-read"
+    try:
+        with open(env_path, encoding="utf-8") as env_file:
+            for line in env_file.read().splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    server_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1]
+        payload = {
+            "sessionId": session_id,
+            "runId": "post-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": msg,
+            "data": data or {},
+        }
+        urllib.request.urlopen(
+            urllib.request.Request(
+                server_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=0.5,
+        ).read()
+    except Exception:
+        pass
+# #endregion
+
+
 class _SymlinkResolverWorker(QObject):
     progress = pyqtSignal(str, bool)
     finished = pyqtSignal()
     log_message = pyqtSignal(str, str)
 
-    def __init__(self, cmd_manager, device_serial, symlinks):
+    def __init__(self, cmd_manager, device_serial, symlinks, adb_lock: threading.Lock):
         super().__init__()
         self.cmd_manager = cmd_manager
         self.device_serial = device_serial
         self.symlinks = symlinks
+        self._adb_lock = adb_lock
         self._running = True
 
     def stop(self):
@@ -45,15 +82,7 @@ class _SymlinkResolverWorker(QObject):
             device_serial=self.device_serial,
             remote_path=remote_path,
         )
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            encoding="utf-8",
-            errors="replace",
-        )
+        res = self._run_subprocess_command(cmd)
         stdout = res.stdout.strip().lower()
 
         if "directory" in stdout:
@@ -64,8 +93,22 @@ class _SymlinkResolverWorker(QObject):
                 device_serial=self.device_serial,
                 remote_path=remote_path,
             )
-            res_ls = subprocess.run(
-                ls_cmd,
+            res_ls = self._run_subprocess_command(ls_cmd)
+            if res_ls.stdout and res_ls.stdout.startswith("d"):
+                return True
+            return False
+        return False
+
+    def _run_subprocess_command(self, cmd: list[str]) -> subprocess.CompletedProcess:
+        resolved_cwd = None
+        if cmd and cmd[0]:
+            executable_path = os.path.abspath(cmd[0])
+            if os.path.isfile(executable_path):
+                resolved_cwd = os.path.dirname(executable_path)
+        with self._adb_lock:
+            return subprocess.run(
+                cmd,
+                cwd=resolved_cwd,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -73,10 +116,6 @@ class _SymlinkResolverWorker(QObject):
                 encoding="utf-8",
                 errors="replace",
             )
-            if res_ls.stdout and res_ls.stdout.startswith("d"):
-                return True
-            return False
-        return False
 
 
 class FileManagerService(QObject):
@@ -107,11 +146,14 @@ class FileManagerService(QObject):
         self._run_adb_command = run_adb_command
         self._is_running = is_running
         self._symlink_workers: dict[str, _SymlinkResolverWorker] = {}
+        self._symlink_request_tokens: dict[str, int] = {}
+        self._adb_lock = threading.Lock()
 
     def list_device_files(self, device_serial: str, path: str):
         def _list():
             cmd = self._cmd_manager.get_target_cmd("list_files_cmd", device_serial=device_serial, remote_path=path)
-            res = self._run_adb_command(cmd, f"列出文件 ({device_serial})")
+            with self._adb_lock:
+                res = self._run_adb_command(cmd, f"列出文件 ({device_serial})")
             if res and res.returncode == 0:
                 lines = res.stdout.splitlines()
                 file_list = []
@@ -159,6 +201,8 @@ class FileManagerService(QObject):
 
     def list_device_files_detailed(self, device_serial: str, path: str):
         def _list():
+            request_token = self._symlink_request_tokens.get(device_serial, 0) + 1
+            self._symlink_request_tokens[device_serial] = request_token
             if device_serial in self._symlink_workers:
                 try:
                     self._symlink_workers[device_serial].stop()
@@ -167,9 +211,36 @@ class FileManagerService(QObject):
                 del self._symlink_workers[device_serial]
 
             cmd = self._cmd_manager.get_target_cmd("list_files_detailed_cmd", device_serial=device_serial, remote_path=path)
-            res = self._run_adb_command(cmd, f"列出详细文件 ({device_serial})")
+            # #region debug-point C:file-list-command
+            _report_debug_event(
+                "C",
+                "file_manager_service.list_device_files_detailed",
+                "[DEBUG] file list command prepared",
+                {
+                    "device_serial": device_serial,
+                    "path": path,
+                    "request_token": request_token,
+                    "cmd": cmd,
+                },
+            )
+            # #endregion
+            with self._adb_lock:
+                res = self._run_adb_command(cmd, f"列出详细文件 ({device_serial})")
 
             if res and res.returncode == 0:
+                # #region debug-point D:file-list-success
+                _report_debug_event(
+                    "D",
+                    "file_manager_service.list_device_files_detailed",
+                    "[DEBUG] file list command succeeded",
+                    {
+                        "device_serial": device_serial,
+                        "path": path,
+                        "request_token": request_token,
+                        "stdout_head": "\n".join((res.stdout or "").splitlines()[:3]),
+                    },
+                )
+                # #endregion
                 lines = res.stdout.splitlines()
                 file_list = []
                 for line in lines:
@@ -195,14 +266,29 @@ class FileManagerService(QObject):
 
                 symlinks = [fi for fi in file_list if fi.file_type == FileType.SYMLINK and fi.symlink_target]
                 if symlinks:
-                    self._resolve_symlinks_async(device_serial, path, file_list)
+                    self._resolve_symlinks_async(device_serial, path, file_list, request_token)
             else:
+                # #region debug-point C:file-list-failed
+                _report_debug_event(
+                    "C",
+                    "file_manager_service.list_device_files_detailed",
+                    "[DEBUG] file list command failed",
+                    {
+                        "device_serial": device_serial,
+                        "path": path,
+                        "request_token": request_token,
+                        "returncode": None if res is None else res.returncode,
+                        "stdout": "" if res is None else (res.stdout or ""),
+                        "stderr": "" if res is None else (res.stderr or ""),
+                    },
+                )
+                # #endregion
                 self.log_message.emit("读取目录失败 (可能无权限或路径错误)", "error")
                 self.files_listed_detailed.emit(path, [], False)
 
         self._task_runner.start(name="files-list-detailed", group="files", target=_list)
 
-    def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list):
+    def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list, request_token: int):
         symlinks_to_resolve = []
         for fi in file_list:
             if fi.file_type == FileType.SYMLINK and fi.symlink_target and fi.is_symlink_to_dir is None:
@@ -214,10 +300,12 @@ class FileManagerService(QObject):
         if not symlinks_to_resolve:
             return
 
-        worker = _SymlinkResolverWorker(self._cmd_manager, device_serial, symlinks_to_resolve)
+        worker = _SymlinkResolverWorker(self._cmd_manager, device_serial, symlinks_to_resolve, self._adb_lock)
         worker.log_message.connect(self.log_message.emit)
 
         def on_progress(name: str, is_dir: bool):
+            if self._symlink_request_tokens.get(device_serial) != request_token:
+                return
             for fi in file_list:
                 if fi.name == name and fi.file_type == FileType.SYMLINK:
                     fi.is_symlink_to_dir = is_dir

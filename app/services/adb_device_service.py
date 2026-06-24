@@ -1,10 +1,46 @@
 import os
+import json
+import shlex
 import shutil
 import subprocess
 import time
+import urllib.request
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
+
+
+# #region debug-point B:install-service
+def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
+    env_path = os.path.join(os.path.abspath("."), ".dbg", "route-install-file-read.env")
+    server_url = "http://127.0.0.1:7777/event"
+    session_id = "route-install-file-read"
+    try:
+        with open(env_path, encoding="utf-8") as env_file:
+            for line in env_file.read().splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    server_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1]
+        payload = {
+            "sessionId": session_id,
+            "runId": "post-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": msg,
+            "data": data or {},
+        }
+        urllib.request.urlopen(
+            urllib.request.Request(
+                server_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=0.5,
+        ).read()
+    except Exception:
+        pass
+# #endregion
 
 
 class ADBDeviceService(QObject):
@@ -21,6 +57,7 @@ class ADBDeviceService(QObject):
         self._is_refreshing = False
         self._refresh_pending = False
         self._last_device_snapshot: tuple[str, ...] | None = None
+        self._sndcpy_package = "com.rom1v.sndcpy"
 
     def validate_paths(self):
         def _validate():
@@ -116,9 +153,35 @@ class ADBDeviceService(QObject):
     def install_apk(self, device_serial: str):
         def _install():
             try:
+                was_installed_before = self._is_sndcpy_installed(device_serial)
                 cmd = self._cmd_manager.get_target_cmd("install_apk_direct_install_cmd", device_serial=device_serial)
+                # #region debug-point B:install-command
+                _report_debug_event(
+                    "B",
+                    "adb_device_service.install_apk",
+                    "[DEBUG] install task started",
+                    {
+                        "device_serial": device_serial,
+                        "cmd": cmd,
+                        "apk_path": self._cmd_manager.get_variable("apk_path"),
+                        "was_installed_before": was_installed_before,
+                    },
+                )
+                # #endregion
                 res = self._run_adb_command(cmd, f"直接安装APK ({device_serial})")
                 if self._should_retry_install(res):
+                    # #region debug-point B:install-retry
+                    _report_debug_event(
+                        "B",
+                        "adb_device_service.install_apk",
+                        "[DEBUG] install retry requested",
+                        {
+                            "device_serial": device_serial,
+                            "returncode": None if res is None else res.returncode,
+                            "result_text": self._result_text(res),
+                        },
+                    )
+                    # #endregion
                     self.log_message.emit("尝试卸载旧版本并重新安装...", "warning")
                     self._run_adb_command(self._cmd_manager.get_target_cmd("uninstall_apk_cmd", device_serial=device_serial), "卸载旧版本")
                     res = self._run_adb_command(
@@ -126,6 +189,26 @@ class ADBDeviceService(QObject):
                         "重新安装APK",
                     )
                 success = self._install_succeeded(res)
+                if not success and self._install_indicates_existing_package(res):
+                    success = was_installed_before or self._is_sndcpy_installed(device_serial)
+                    if success:
+                        self.log_message.emit("设备中已存在 sndcpy，跳过重复安装。", "info")
+                if not success and not was_installed_before and self._should_wait_for_install_confirmation(res):
+                    self.log_message.emit("安装结果尚未明确，正在等待手机端确认安装...", "info")
+                    success = self._wait_for_sndcpy_install(device_serial)
+                # #region debug-point B:install-finished
+                _report_debug_event(
+                    "B",
+                    "adb_device_service.install_apk",
+                    "[DEBUG] install task finished",
+                    {
+                        "device_serial": device_serial,
+                        "success": success,
+                        "returncode": None if res is None else res.returncode,
+                        "result_text": self._result_text(res),
+                    },
+                )
+                # #endregion
                 if not success:
                     error_text = self._result_text(res) or "未获取到ADB返回结果"
                     self.log_message.emit(f"APK安装失败: {error_text}", "error")
@@ -193,6 +276,36 @@ class ADBDeviceService(QObject):
         self._cmd_manager.update_variable("scrcpy_path", "")
         self._cmd_manager.update_variable("apk_path", "")
 
+    def _build_adb_shell_cmd(self, device_serial: str, *shell_args: str) -> list[str]:
+        cmd = [self._cmd_manager.get_variable("adb_path")]
+        adb_extra = self._cmd_manager.get_variable("adb_extra")
+        if adb_extra.strip():
+            cmd.extend(shlex.split(adb_extra))
+        cmd.extend(["-s", device_serial, "shell", *shell_args])
+        return cmd
+
+    def _is_sndcpy_installed(self, device_serial: str) -> bool:
+        result = self._run_adb_command(
+            self._build_adb_shell_cmd(device_serial, "pm", "path", self._sndcpy_package),
+            f"检查 sndcpy 安装状态 ({device_serial})",
+        )
+        if result is None or result.returncode != 0:
+            return False
+        return "package:" in (result.stdout or "").lower()
+
+    def _wait_for_sndcpy_install(
+        self,
+        device_serial: str,
+        timeout_seconds: float = 15.0,
+        interval_seconds: float = 1.0,
+    ) -> bool:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if self._is_sndcpy_installed(device_serial):
+                return True
+            time.sleep(interval_seconds)
+        return self._is_sndcpy_installed(device_serial)
+
     @staticmethod
     def _result_text(result: Optional[subprocess.CompletedProcess]) -> str:
         if result is None:
@@ -203,13 +316,47 @@ class ADBDeviceService(QObject):
 
     @classmethod
     def _install_succeeded(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
-        if result is None or result.returncode != 0:
+        if result is None:
             return False
-        return "success" in cls._result_text(result).lower()
+        output = cls._result_text(result).lower()
+        if "success" in output:
+            return True
+        return result.returncode == 0 and not output
+
+    @classmethod
+    def _install_indicates_existing_package(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+        output = cls._result_text(result).lower()
+        return any(token in output for token in ("already exists", "install_failed_already_exists", "already installed"))
+
+    @classmethod
+    def _should_wait_for_install_confirmation(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+        if result is None:
+            return False
+        output = cls._result_text(result).lower()
+        if cls._install_succeeded(result) or cls._install_indicates_existing_package(result):
+            return False
+        definitive_failures = (
+            "adb: error:",
+            "device offline",
+            "no devices/emulators found",
+            "more than one device",
+            "permission denied",
+            "failed to stat",
+        )
+        if any(token in output for token in definitive_failures):
+            return False
+        return result.returncode != 0 or "performing streamed install" in output
 
     @classmethod
     def _should_retry_install(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
         if result is None or cls._install_succeeded(result):
             return False
         output = cls._result_text(result).lower()
-        return any(token in output for token in ("failure [", "install_failed", "version downgrade", "already exists"))
+        return any(
+            token in output
+            for token in (
+                "install_failed_update_incompatible",
+                "install_failed_version_downgrade",
+                "version downgrade",
+            )
+        )

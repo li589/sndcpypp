@@ -8,6 +8,28 @@ from app.domain.models.operation_requests import RuntimeConfigurationRequest
 from app.infrastructure.adb.path_resolver import ResolvedADBPath
 
 
+def get_audio_router_candidate_paths(app_base_dir: str) -> list[str]:
+    ext = ".exe" if os.name == "nt" else ""
+    repo_root = os.path.abspath(app_base_dir)
+    candidates = [
+        os.path.join(repo_root, "AudioRouter", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "build", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "build", "Release", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "build", "Debug", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "cmake-build-release", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "cmake-build-debug", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "out", "build", "x64-Release", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "out", "build", "x64-Debug", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "x64", "Release", f"AudioRouter{ext}"),
+        os.path.join(repo_root, "AudioRouter", "x64", "Debug", f"AudioRouter{ext}"),
+    ]
+    return [os.path.abspath(candidate) for candidate in candidates]
+
+
+def get_audio_router_recommended_args() -> str:
+    return "-Idummy --demux rawaud --network-caching=200 --play-and-exit"
+
+
 def get_default_player_path(app_base_dir: str) -> str:
     ext = ".exe" if os.name == "nt" else ""
     candidate_names = [f"vlc{ext}", "vlc"]
@@ -29,6 +51,7 @@ def get_default_player_path(app_base_dir: str) -> str:
                 continue
             candidate_paths.append(os.path.join(base_dir, "VideoLAN", "VLC", "vlc.exe"))
 
+    candidate_paths.extend(get_audio_router_candidate_paths(app_base_dir))
     candidate_paths.append(os.path.join(app_base_dir, "RouteAudio", f"AudioExt{ext}"))
 
     for candidate in candidate_paths:

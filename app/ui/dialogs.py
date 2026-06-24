@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from enum import IntEnum
 
 from PyQt6.QtWidgets import (
@@ -55,7 +56,14 @@ class ExitConfirmDialog(QDialog):
 
 
 class ParamSettingsDialog(QDialog):
-    def __init__(self, parent=None, title: str = "", param_name: str = "", current_val: str = ""):
+    def __init__(
+        self,
+        parent=None,
+        title: str = "",
+        param_name: str = "",
+        current_val: str = "",
+        quick_fill_actions: Sequence[tuple[str, str]] | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(350)
@@ -66,6 +74,16 @@ class ParamSettingsDialog(QDialog):
         self.input_edit = QLineEdit()
         self.input_edit.setText(current_val)
         layout.addWidget(self.input_edit)
+
+        if quick_fill_actions:
+            quick_fill_layout = QHBoxLayout()
+            quick_fill_layout.addWidget(QLabel("快捷填充:"))
+            for label, value in quick_fill_actions:
+                button = QPushButton(label)
+                button.clicked.connect(lambda _checked=False, fill_value=value: self.input_edit.setText(fill_value))
+                quick_fill_layout.addWidget(button)
+            quick_fill_layout.addStretch()
+            layout.addLayout(quick_fill_layout)
 
         btn_layout = QHBoxLayout()
         ok_btn = QPushButton("确定保存")
