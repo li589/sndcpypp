@@ -1,7 +1,5 @@
 import sys
 import os
-import json
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -100,37 +98,8 @@ from app.ui.runtime_settings import (
 from core import CoreController, FileInfo
 
 
-# #region debug-point A:route-install-entry
 def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict[str, Any] | None = None) -> None:
-    env_path = os.path.join(os.path.abspath("."), ".dbg", "route-install-file-read.env")
-    server_url = "http://127.0.0.1:7777/event"
-    session_id = "route-install-file-read"
-    try:
-        with open(env_path, encoding="utf-8") as env_file:
-            for line in env_file.read().splitlines():
-                if line.startswith("DEBUG_SERVER_URL="):
-                    server_url = line.split("=", 1)[1]
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1]
-        payload = {
-            "sessionId": session_id,
-            "runId": "post-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": msg,
-            "data": data or {},
-        }
-        urllib.request.urlopen(
-            urllib.request.Request(
-                server_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=0.5,
-        ).read()
-    except Exception:
-        pass
-# #endregion
+    del hypothesis_id, location, msg, data
 
 
 @dataclass(slots=True)

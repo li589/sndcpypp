@@ -21,6 +21,7 @@ class RecordingService(QObject):
         probe_scrcpy_features: Callable[[], dict],
         start_audio_route: Callable[[str, int], None],
         stop_audio: Callable[[str], None],
+        is_running: Callable[[], bool],
     ):
         super().__init__()
         self._cmd_manager = cmd_manager
@@ -30,12 +31,14 @@ class RecordingService(QObject):
         self._probe_scrcpy_features = probe_scrcpy_features
         self._start_audio_route = start_audio_route
         self._stop_audio = stop_audio
+        self._is_running = is_running
 
     def _mark_intentional_record_stop(self, device_serial: str) -> None:
         reg = self._process_registry.ensure(device_serial)
-        stop_markers = reg.setdefault("intentional_record_stop_pids", set())
-        for proc in reg.get("record", []):
-            stop_markers.add(proc.pid)
+        with reg["lock"]:
+            stop_markers = reg.setdefault("intentional_record_stop_pids", set())
+            for proc in reg.get("record", []):
+                stop_markers.add(proc.pid)
 
     def start_recording(
         self,
@@ -91,7 +94,9 @@ class RecordingService(QObject):
 
                 audio_was_running = False
                 if record_audio:
-                    audio_procs = self._process_registry.ensure(device_serial).get("audio", [])
+                    reg = self._process_registry.ensure(device_serial)
+                    with reg["lock"]:
+                        audio_procs = list(reg.get("audio", []))
                     if any(proc.poll() is None for proc in audio_procs):
                         audio_was_running = True
                         self.log_message.emit("检测到音频路由正在运行，为避免冲突将先暂停...", "warning")
@@ -112,9 +117,10 @@ class RecordingService(QObject):
                     def _monitor_and_restore():
                         proc.wait()
                         reg = self._process_registry.ensure(device_serial)
-                        stop_markers = reg.setdefault("intentional_record_stop_pids", set())
-                        was_intentionally_stopped = proc.pid in stop_markers
-                        stop_markers.discard(proc.pid)
+                        with reg["lock"]:
+                            stop_markers = reg.setdefault("intentional_record_stop_pids", set())
+                            was_intentionally_stopped = proc.pid in stop_markers
+                            stop_markers.discard(proc.pid)
                         return_code = proc.poll()
                         self._process_supervisor.remove_if_present(device_serial, "record", proc)
                         if return_code == 0 or was_intentionally_stopped:
@@ -127,7 +133,7 @@ class RecordingService(QObject):
                             self.recording_state_changed.emit(
                                 RecordingStateEvent(RecordingState.FAILED, device_serial, error_text)
                             )
-                        if audio_was_running:
+                        if audio_was_running and self._is_running() and not was_intentionally_stopped:
                             self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
                             self._start_audio_route(device_serial, port=28200)
 
@@ -141,7 +147,7 @@ class RecordingService(QObject):
                         RecordingStateEvent(RecordingState.FAILED, device_serial, str(exc))
                     )
                     self.log_message.emit(f"录制启动失败: {str(exc)}", "error")
-                    if audio_was_running:
+                    if audio_was_running and self._is_running():
                         self._start_audio_route(device_serial, port=28200)
 
         self._task_runner.start(name="record-start", group="recording", target=_rec)

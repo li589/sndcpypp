@@ -425,6 +425,38 @@ class RouteServiceTests(unittest.TestCase):
         self.assertEqual(popen_calls[0].count("-Idummy"), 1)
         self.assertEqual(popen_calls[0].count("--demux"), 1)
 
+    def test_start_audio_route_keeps_running_process_registered_during_shutdown(self):
+        registry = ProcessRegistry()
+        running_state = {"value": True}
+        service = RouteService(
+            cmd_manager=_FakeCommandManager(),
+            process_registry=registry,
+            process_supervisor=ProcessSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: SimpleNamespace(returncode=0, stdout="", stderr=""),
+            probe_scrcpy_features=lambda: {
+                "display_ori": False,
+                "capture_ori": False,
+                "lock_video_ori": False,
+                "degrees": False,
+            },
+            is_running=lambda: running_state["value"],
+        )
+        proc = _ManagedProc()
+
+        def _mark_shutdown(*args, **kwargs):
+            del args, kwargs
+            running_state["value"] = False
+            return True
+
+        with patch("app.services.route_service.subprocess.Popen", return_value=proc), patch(
+            "app.services.route_service.time.sleep",
+            lambda _: None,
+        ), patch.object(service, "_wait_until_process_ready", side_effect=_mark_shutdown):
+            service.start_audio_route("device-1", port=28200)
+
+        self.assertIn(proc, registry.ensure("device-1")["audio"])
+
     def test_stop_audio_internal_uses_device_specific_saved_port(self):
         registry = ProcessRegistry()
         run_calls: list[tuple[list[str], str]] = []
@@ -625,6 +657,26 @@ class RouteServiceTests(unittest.TestCase):
             service.start_video_route("device-1")
 
         self.assertEqual(cleaned, [r"D:\tools\scrcpy\scrcpy.exe"])
+
+    def test_cleanup_stale_scrcpy_processes_does_not_scan_or_kill_untracked_processes(self):
+        registry = ProcessRegistry()
+        service = self._build_service(registry, [])
+
+        with patch("app.services.route_service.subprocess.run") as run_mock:
+            killed = service._cleanup_stale_scrcpy_processes(r"D:\tools\scrcpy\scrcpy.exe")
+
+        self.assertEqual(killed, [])
+        run_mock.assert_not_called()
+
+    def test_cleanup_audio_player_processes_does_not_scan_or_kill_untracked_processes(self):
+        registry = ProcessRegistry()
+        service = self._build_service(registry, [])
+
+        with patch("app.services.route_service.subprocess.run") as run_mock:
+            killed = service._cleanup_audio_player_processes("28200")
+
+        self.assertEqual(killed, [])
+        run_mock.assert_not_called()
 
     def test_start_video_route_prewarms_adb_server_before_spawn(self):
         registry = ProcessRegistry()

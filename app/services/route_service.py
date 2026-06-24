@@ -1,80 +1,21 @@
 import os
-import json
 import shlex
 import subprocess
 import tempfile
 import time
-import urllib.request
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from app.domain.models.operation_requests import RoutingRequest
 
 
-# #region debug-point E:route-service
 def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
-    env_path = os.path.join(os.path.abspath("."), ".dbg", "route-install-file-read.env")
-    server_url = "http://127.0.0.1:7777/event"
-    session_id = "route-install-file-read"
-    try:
-        with open(env_path, encoding="utf-8") as env_file:
-            for line in env_file.read().splitlines():
-                if line.startswith("DEBUG_SERVER_URL="):
-                    server_url = line.split("=", 1)[1]
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1]
-        payload = {
-            "sessionId": session_id,
-            "runId": "post-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": msg,
-            "data": data or {},
-        }
-        urllib.request.urlopen(
-            urllib.request.Request(
-                server_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=0.5,
-        ).read()
-    except Exception:
-        pass
-# #endregion
+    # Production builds no longer emit HTTP debug events from workspace files.
+    del hypothesis_id, location, msg, data
 
 
-# #region debug-point A:video-window-auth
 def _report_video_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
-    env_path = os.path.join(os.path.abspath("."), ".dbg", "video-window-auth.env")
-    server_url = "http://127.0.0.1:7777/event"
-    session_id = "video-window-auth"
-    try:
-        with open(env_path, encoding="utf-8") as env_file:
-            for line in env_file.read().splitlines():
-                if line.startswith("DEBUG_SERVER_URL="):
-                    server_url = line.split("=", 1)[1]
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1]
-        payload = {
-            "sessionId": session_id,
-            "runId": "post-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": msg,
-            "data": data or {},
-        }
-        urllib.request.urlopen(
-            urllib.request.Request(
-                server_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=0.5,
-        ).read()
-    except Exception:
-        pass
-# #endregion
+    del hypothesis_id, location, msg, data
 
 
 class RouteService(QObject):
@@ -103,9 +44,10 @@ class RouteService(QObject):
 
     def _mark_intentional_video_stop(self, device_serial: str) -> None:
         reg = self._process_registry.ensure(device_serial)
-        stop_markers = reg.setdefault("intentional_video_stop_pids", set())
-        for proc in reg.get("video", []):
-            stop_markers.add(proc.pid)
+        with reg["lock"]:
+            stop_markers = reg.setdefault("intentional_video_stop_pids", set())
+            for proc in reg.get("video", []):
+                stop_markers.add(proc.pid)
 
     def _wait_until_process_ready(self, proc, seconds: float = 1.0, interval: float = 0.1) -> bool:
         checks = max(1, int(seconds / interval))
@@ -200,101 +142,14 @@ class RouteService(QObject):
         return False
 
     def _cleanup_stale_scrcpy_processes(self, scrcpy_path: str) -> list[int]:
-        if os.name != "nt":
-            return []
-        resolved_scrcpy_path = os.path.abspath(scrcpy_path) if scrcpy_path else ""
-        if not resolved_scrcpy_path:
-            return []
-        escaped_scrcpy_path = resolved_scrcpy_path.replace("'", "''")
-        query = (
-            "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.Name -eq 'scrcpy.exe' -and $_.ExecutablePath -eq '"
-            f"{escaped_scrcpy_path}"
-            "' } | "
-            "Select-Object -ExpandProperty ProcessId"
-        )
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", query],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=flags,
-                timeout=3,
-            )
-        except Exception:
-            return []
-        if result.returncode != 0:
-            return []
-        killed_pids: list[int] = []
-        for line in (result.stdout or "").splitlines():
-            pid_text = line.strip()
-            if not pid_text.isdigit():
-                continue
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", pid_text],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=flags,
-                    timeout=3,
-                )
-                killed_pids.append(int(pid_text))
-            except Exception:
-                continue
-        return killed_pids
+        # Never scan/kill unrelated user processes. Only registry-tracked children
+        # are terminated via ProcessSupervisor.
+        del scrcpy_path
+        return []
 
     def _cleanup_audio_player_processes(self, port: str) -> list[int]:
-        if os.name != "nt":
-            return []
-        player_path = self._cmd_manager.get_variable("player_path")
-        player_name = os.path.basename(player_path or "").lower()
-        if not player_name:
-            return []
-        command_fragment = f"tcp://localhost:{port}".lower()
-        query = (
-            "Get-CimInstance Win32_Process | "
-            f"Where-Object {{ $_.Name -eq '{player_name}' -and $_.CommandLine -like '*{command_fragment}*' }} | "
-            "Select-Object -ExpandProperty ProcessId"
-        )
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", query],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=flags,
-                timeout=3,
-            )
-        except Exception:
-            return []
-        if result.returncode != 0:
-            return []
-        killed_pids: list[int] = []
-        for line in (result.stdout or "").splitlines():
-            pid_text = line.strip()
-            if not pid_text.isdigit():
-                continue
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", pid_text],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=flags,
-                    timeout=3,
-                )
-                killed_pids.append(int(pid_text))
-            except Exception:
-                continue
-        return killed_pids
+        del port
+        return []
 
     def _ensure_video_adb_server_ready(self, device_serial: str) -> bool:
         result = self._run_adb_command(
@@ -444,8 +299,9 @@ class RouteService(QObject):
     def _stop_audio_internal(self, device_serial: str):
         try:
             reg = self._process_registry.ensure(device_serial)
+            with reg["lock"]:
+                port = str(reg.get("audio_port") or 28200)
             self._process_supervisor.kill_group(device_serial, "audio")
-            port = str(reg.get("audio_port") or 28200)
             fallback_audio_pids = self._cleanup_audio_player_processes(port)
             if fallback_audio_pids:
                 self.log_message.emit(
@@ -460,7 +316,8 @@ class RouteService(QObject):
                 self._cmd_manager.get_target_cmd("remove_audio_forward_cmd", device_serial=device_serial, port=port),
                 f"移除端口转发 ({device_serial})",
             )
-            reg["audio_port"] = None
+            with reg["lock"]:
+                reg["audio_port"] = None
         except Exception as exc:
             self.log_message.emit(f"清理音频进程失败: {str(exc)}", "error")
 
@@ -492,13 +349,15 @@ class RouteService(QObject):
             # #endregion
             self._stop_audio_internal(device_serial)
             reg = self._process_registry.ensure(device_serial)
-            reg["audio_port"] = port
+            with reg["lock"]:
+                reg["audio_port"] = port
             forward_result = self._run_adb_command(
                 self._cmd_manager.get_target_cmd("start_audio_forward_cmd", device_serial=device_serial, port=port),
                 "音频端口转发",
             )
             if not self._require_adb_success(forward_result, action_text=f"音频端口转发 ({device_serial})", operation="audio_route"):
-                reg["audio_port"] = None
+                with reg["lock"]:
+                    reg["audio_port"] = None
                 return False
 
             start_result = self._run_adb_command(
@@ -542,10 +401,13 @@ class RouteService(QObject):
                 time.sleep(1)
 
             reg = self._process_registry.ensure(device_serial)
-            if self._is_running() and proc in reg["audio"]:
+            with reg["lock"]:
+                proc_still_registered = proc in reg.get("audio", [])
+            if self._is_running() and proc_still_registered:
                 self.log_message.emit(f"播放器已意外退出 (设备: {device_serial})", "warning")
                 self.player_process_exited.emit(device_serial)
-            self._process_supervisor.remove_if_present(device_serial, "audio", proc)
+            if proc.poll() is not None or self._is_running():
+                self._process_supervisor.remove_if_present(device_serial, "audio", proc)
             return True
         except Exception as exc:
             self.log_message.emit(f"音频路由启动失败: {str(exc)}", "error")
@@ -808,7 +670,8 @@ class RouteService(QObject):
         if request.enable_audio:
             if request.enable_video:
                 reg = self._process_registry.ensure(request.device_serial)
-                video_proc = reg.get("video", [])[-1] if reg.get("video") else None
+                with reg["lock"]:
+                    video_proc = reg.get("video", [])[-1] if reg.get("video") else None
                 if not video_started or video_proc is None or not self._wait_for_video_renderer(video_proc, request.device_serial):
                     self.log_message.emit("画面链路尚未稳定，已暂停自动启动音频，请先确认录屏授权和图像窗口。", "warning")
                     return
@@ -846,9 +709,10 @@ class RouteService(QObject):
             "stdout": self._read_debug_file(getattr(proc, "_debug_stdout_log_path", None)),
             "stderr": self._read_debug_file(getattr(proc, "_debug_stderr_log_path", None)),
         }
-        stop_markers = reg.setdefault("intentional_video_stop_pids", set())
-        was_intentionally_stopped = proc.pid in stop_markers
-        stop_markers.discard(proc.pid)
+        with reg["lock"]:
+            stop_markers = reg.setdefault("intentional_video_stop_pids", set())
+            was_intentionally_stopped = proc.pid in stop_markers
+            stop_markers.discard(proc.pid)
         # #region debug-point C:video-watch-exit
         _report_video_debug_event(
             "C",
@@ -898,5 +762,6 @@ class RouteService(QObject):
 
     def is_audio_running(self, device_serial: str) -> bool:
         reg = self._process_registry.ensure(device_serial)
-        audio_procs = reg.get("audio", [])
+        with reg["lock"]:
+            audio_procs = list(reg.get("audio", []))
         return any(proc.poll() is None for proc in audio_procs)

@@ -106,6 +106,7 @@ class RecordingServiceTests(unittest.TestCase):
             },
             start_audio_route=lambda device, port: None,
             stop_audio=lambda device: None,
+            is_running=lambda: True,
         )
 
     def test_recording_always_uses_background_no_playback_flag(self):
@@ -183,6 +184,41 @@ class RecordingServiceTests(unittest.TestCase):
         self.assertEqual(states[0], (RecordingState.STARTED, "device-1", "D:/capture.mp4"))
         self.assertEqual(states[-1], (RecordingState.STOPPED, "device-1", "D:/capture.mp4"))
 
+    def test_recording_does_not_restore_audio_when_app_is_stopping(self):
+        registry = ProcessRegistry()
+        restored_audio: list[tuple[str, int]] = []
+        registry.register("device-1", "audio", _FakeProc())
+        service = RecordingService(
+            cmd_manager=_FakeCommandManager(),
+            process_registry=registry,
+            process_supervisor=ProcessSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            probe_scrcpy_features=lambda: {
+                "record_ori": False,
+                "capture_ori": False,
+                "lock_video_ori": False,
+                "degrees": False,
+                "no_playback": "--no-playback",
+            },
+            start_audio_route=lambda device, port: restored_audio.append((device, port)),
+            stop_audio=lambda device: None,
+            is_running=lambda: False,
+        )
+
+        with patch("subprocess.Popen", return_value=_FakeProc()), patch(
+            "app.services.recording_service.time.sleep",
+            lambda _: None,
+        ):
+            service.start_recording(
+                device_serial="device-1",
+                save_path="D:/capture.mp4",
+                bg_mode=False,
+                record_video=True,
+                record_audio=True,
+            )
+
+        self.assertEqual(restored_audio, [])
+
     def test_stop_recording_marks_process_as_intentional_stop(self):
         registry = ProcessRegistry()
         task_runner = _DeferredMonitorTaskRunner()
@@ -200,6 +236,7 @@ class RecordingServiceTests(unittest.TestCase):
             },
             start_audio_route=lambda device, port: None,
             stop_audio=lambda device: None,
+            is_running=lambda: True,
         )
         states: list[tuple[RecordingState, str, str]] = []
         service.recording_state_changed.connect(

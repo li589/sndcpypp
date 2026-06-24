@@ -158,6 +158,8 @@ bool AudioApp::startNetworkPlayback(const NetConfig& config) {
 
     // 初始化环形缓冲，预留 2 秒钟的缓冲区大小
     if (ma_pcm_rb_init(pImpl->format, config.channels, config.sampleRate * 2, NULL, NULL, &pImpl->ringBuffer) != MA_SUCCESS) {
+        pImpl->udpSocket.reset();
+        pImpl->tcpSocket.reset();
         return false;
     }
 
@@ -169,11 +171,21 @@ bool AudioApp::startNetworkPlayback(const NetConfig& config) {
     deviceConfig.pUserData         = pImpl.get();
 
     if (ma_device_init(NULL, &deviceConfig, &pImpl->playbackDevice) != MA_SUCCESS) {
+        ma_pcm_rb_uninit(&pImpl->ringBuffer);
+        pImpl->udpSocket.reset();
+        pImpl->tcpSocket.reset();
+        return false;
+    }
+
+    if (ma_device_start(&pImpl->playbackDevice) != MA_SUCCESS) {
+        ma_device_uninit(&pImpl->playbackDevice);
+        ma_pcm_rb_uninit(&pImpl->ringBuffer);
+        pImpl->udpSocket.reset();
+        pImpl->tcpSocket.reset();
         return false;
     }
 
     pImpl->isPlaying = true;
-    ma_device_start(&pImpl->playbackDevice);
 
     pImpl->networkThread = std::thread([this, config]() {
         asio::ip::udp::endpoint sender_endpoint;
@@ -237,8 +249,13 @@ bool AudioApp::startRecording(const RecordConfig& config) {
         return false;
     }
 
+    if (ma_device_start(&pImpl->captureDevice) != MA_SUCCESS) {
+        ma_device_uninit(&pImpl->captureDevice);
+        ma_encoder_uninit(&pImpl->encoder);
+        return false;
+    }
+
     pImpl->isRecording = true;
-    ma_device_start(&pImpl->captureDevice);
     return true;
 }
 

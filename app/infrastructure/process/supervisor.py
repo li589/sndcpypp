@@ -14,7 +14,8 @@ class ProcessSupervisor:
     def kill_group(self, device_serial: str, group: str):
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         reg = self.registry.ensure(device_serial)
-        procs = reg.get(group, [])
+        with reg["lock"]:
+            procs = list(reg.get(group, []))
         for proc in procs:
             if proc.poll() is None:
                 try:
@@ -51,9 +52,12 @@ class ProcessSupervisor:
                             proc.kill()
                 except Exception:
                     pass
-        reg[group].clear()
+        with reg["lock"]:
+            if group in reg:
+                reg[group].clear()
 
     def remove_if_present(self, device_serial: str, group: str, proc: Any):
         reg = self.registry.ensure(device_serial)
-        if proc in reg.get(group, []):
-            reg[group].remove(proc)
+        with reg["lock"]:
+            if proc in reg.get(group, []):
+                reg[group].remove(proc)

@@ -1,5 +1,6 @@
 #include "AudioApp.h"
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <chrono>
 
@@ -151,10 +152,10 @@ int main(int argc, char* argv[]) {
         std::cout << "==============================================\n";
     }
 
-    AudioApp audioApp;
+    auto audioApp = std::make_shared<AudioApp>();
 
     if (doRecord) {
-        if (!audioApp.startRecording(recConfig)) {
+        if (!audioApp->startRecording(recConfig)) {
             if (showConsole) std::cerr << "[错误] 录制启动失败！\n";
         } else {
             if (showConsole) std::cout << "[录音状态] 正在录制至: " << recConfig.outputFile << "\n";
@@ -162,7 +163,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (doPlay) {
-        if (!audioApp.startNetworkPlayback(netConfig)) {
+        if (!audioApp->startNetworkPlayback(netConfig)) {
             if (showConsole) std::cerr << "[错误] 网络音频接收失败！\n";
             return -1;
         } else {
@@ -179,20 +180,23 @@ int main(int argc, char* argv[]) {
 
     if (showConsole) {
         std::cout << "\n系统运行中... 按回车键[Enter] 即可退出并保存音频。\n";
-        // 使用一个分离的后台线程去等待回车，避免阻塞主线程对掉线事件的监控
-        std::thread waitKey([&]() {
+        // Detached thread only keeps a weak reference, so it cannot outlive the app object.
+        std::weak_ptr<AudioApp> weakAudioApp = audioApp;
+        std::thread waitKey([weakAudioApp]() {
             std::cin.get();
-            audioApp.stop();
+            if (auto lockedAudioApp = weakAudioApp.lock()) {
+                lockedAudioApp->stop();
+            }
         });
         waitKey.detach();
         // 阻塞主线程，直到手动按下回车，或者因手机掉线/网络异常导致退出
-        audioApp.wait();
+        audioApp->wait();
     } else {
         // 后台静默模式：完美阻塞直到音频路由断开。一旦 Sndcpy/ADB 停用，程序自然光速自杀清理，绝无僵尸进程。
-        audioApp.wait();
+        audioApp->wait();
     }
 
-    audioApp.stop();
+    audioApp->stop();
     if (showConsole) std::cout << "清理完毕，已安全退出。\n";
 
     return 0;

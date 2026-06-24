@@ -77,6 +77,7 @@ class CoreController(QObject):
             probe_scrcpy_features=self._probe_scrcpy_features,
             start_audio_route=self._route_service.start_audio_route,
             stop_audio=self._route_service.stop_audio_sync,
+            is_running=lambda: self._running,
         )
         self._debug_command_service = DebugCommandService(
             cmd_manager=self._cmd_manager,
