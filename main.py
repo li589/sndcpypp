@@ -767,8 +767,16 @@ class SndcpyGUI(QMainWindow):
             ),
         )
 
-    @pyqtSlot(str, str, int)
-    def handle_file_progress(self, status: str, msg: str, percent: int):
+    def _should_refresh_file_view_after_transfer(self, device_serial: str, transfer_kind: str, remote_path: str) -> bool:
+        if transfer_kind != "push":
+            return False
+        if device_serial != self.file_device_combo.currentText():
+            return False
+        current_path = ensure_trailing_slash(self.remote_path_edit.text().strip() or "/")
+        return current_path == ensure_trailing_slash(remote_path or "/")
+
+    @pyqtSlot(str, str, str, str, str, int)
+    def handle_file_progress(self, status: str, device_serial: str, transfer_kind: str, remote_path: str, msg: str, percent: int):
         self.status_label.setText(msg)
         if status == "start":
             self.progress_bar.setVisible(True)
@@ -779,8 +787,7 @@ class SndcpyGUI(QMainWindow):
         elif status in["done", "error"]:
             self.progress_bar.setValue(100)
             QTimer.singleShot(1500, lambda: self.progress_bar.setVisible(False))
-            # 若传输成功，静默刷新当前列表以展现最新文件
-            if status == "done":
+            if status == "done" and self._should_refresh_file_view_after_transfer(device_serial, transfer_kind, remote_path):
                 QTimer.singleShot(500, self.refresh_file_list)
 
     @pyqtSlot()

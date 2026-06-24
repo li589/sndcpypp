@@ -91,7 +91,7 @@ class FileManagerService(QObject):
     files_listed = pyqtSignal(str, list, bool)
     files_listed_detailed = pyqtSignal(str, list, bool)
     symlink_resolved = pyqtSignal(str, str, bool)
-    file_transfer_progress = pyqtSignal(str, str, int)
+    file_transfer_progress = pyqtSignal(str, str, str, str, str, int)
     log_message = pyqtSignal(str, str)
 
     def __init__(
@@ -117,6 +117,7 @@ class FileManagerService(QObject):
         self._symlink_workers: dict[str, _SymlinkResolverWorker] = {}
         self._symlink_request_tokens: dict[str, int] = {}
         self._adb_lock = threading.Lock()
+        self._transfer_lock = threading.Lock()
 
     def list_device_files(self, device_serial: str, path: str):
         def _list():
@@ -294,46 +295,84 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-resolve-symlinks", group="files", target=_run_worker)
 
-    def _run_transfer_with_progress(self, device_serial: str, cmd: list, desc: str, *, emit_done: bool = True) -> bool:
-        self.file_transfer_progress.emit("start", f"正在{desc}...", 0)
+    def _run_transfer_with_progress(
+        self,
+        device_serial: str,
+        cmd: list,
+        desc: str,
+        *,
+        transfer_kind: str,
+        remote_path: str = "",
+        emit_done: bool = True,
+    ) -> bool:
+        self.file_transfer_progress.emit("start", device_serial, transfer_kind, remote_path, f"正在{desc}...", 0)
         try:
-            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            proc = subprocess.Popen(
-                cmd,
-                creationflags=flags,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            self._process_registry.register(device_serial, "transfer", proc)
+            with self._transfer_lock:
+                flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                proc = subprocess.Popen(
+                    cmd,
+                    creationflags=flags,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                self._process_registry.register(device_serial, "transfer", proc)
 
-            buffer = ""
-            while self._is_running():
-                char = proc.stdout.read(1)
-                if not char:
-                    break
-                if char in ("\r", "\n"):
-                    percent = self._transfer_progress_parser.extract_percent(buffer)
-                    if percent is not None:
-                        self.file_transfer_progress.emit("progress", f"传输中: {percent}%", percent)
-                    buffer = ""
-                else:
-                    buffer += char
+                buffer = ""
+                while self._is_running():
+                    char = proc.stdout.read(1)
+                    if not char:
+                        break
+                    if char in ("\r", "\n"):
+                        percent = self._transfer_progress_parser.extract_percent(buffer)
+                        if percent is not None:
+                            self.file_transfer_progress.emit(
+                                "progress",
+                                device_serial,
+                                transfer_kind,
+                                remote_path,
+                                f"传输中: {percent}%",
+                                percent,
+                            )
+                        buffer = ""
+                    else:
+                        buffer += char
 
-            proc.wait()
-            self._process_supervisor.remove_if_present(device_serial, "transfer", proc)
+                proc.wait()
+                self._process_supervisor.remove_if_present(device_serial, "transfer", proc)
 
-            if proc.returncode == 0:
-                if emit_done:
-                    self.file_transfer_progress.emit("done", f"{desc} 完成", 100)
-                return True
-            err = buffer.strip() or "目标路径无效、断开或【无权限(如Android/data目录)】"
-            self.file_transfer_progress.emit("error", f"{desc} 失败: {err}", 0)
-            return False
+                if proc.returncode == 0:
+                    if emit_done:
+                        self.file_transfer_progress.emit(
+                            "done",
+                            device_serial,
+                            transfer_kind,
+                            remote_path,
+                            f"{desc} 完成",
+                            100,
+                        )
+                    return True
+                err = buffer.strip() or "目标路径无效、断开或【无权限(如Android/data目录)】"
+                self.file_transfer_progress.emit(
+                    "error",
+                    device_serial,
+                    transfer_kind,
+                    remote_path,
+                    f"{desc} 失败: {err}",
+                    0,
+                )
+                return False
         except Exception as exc:
-            self.file_transfer_progress.emit("error", f"{desc} 发生异常: {exc}", 0)
+            self.file_transfer_progress.emit(
+                "error",
+                device_serial,
+                transfer_kind,
+                remote_path,
+                f"{desc} 发生异常: {exc}",
+                0,
+            )
             return False
 
     def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str = None):
@@ -361,6 +400,7 @@ class FileManagerService(QObject):
                 device_serial,
                 cmd,
                 f"下载 {target_name}",
+                transfer_kind="pull",
                 emit_done=False,
             )
 
@@ -375,9 +415,23 @@ class FileManagerService(QObject):
 
                     shutil.move(temp_target_path, real_target_path)
                     self.log_message.emit(f"文件已成功下载并保存至: {real_target_path}", "success")
-                    self.file_transfer_progress.emit("done", f"下载 {target_name} 完成", 100)
+                    self.file_transfer_progress.emit(
+                        "done",
+                        device_serial,
+                        "pull",
+                        "",
+                        f"下载 {target_name} 完成",
+                        100,
+                    )
                 except Exception as exc:
-                    self.file_transfer_progress.emit("error", f"下载 {target_name} 失败: {str(exc)}", 0)
+                    self.file_transfer_progress.emit(
+                        "error",
+                        device_serial,
+                        "pull",
+                        "",
+                        f"下载 {target_name} 失败: {str(exc)}",
+                        0,
+                    )
                     self.log_message.emit(f"将缓存转移至目标目录时失败: {str(exc)}", "error")
                     try:
                         if os.path.isdir(temp_target_path):
@@ -414,6 +468,7 @@ class FileManagerService(QObject):
             group="files",
             target=self._run_transfer_with_progress,
             args=(device_serial, cmd, f"上传 {target_name}"),
+            kwargs={"transfer_kind": "push", "remote_path": remote_dir},
         )
 
     def stop_file_transfers(self, device_serial: Optional[str] = None):

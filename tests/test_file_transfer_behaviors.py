@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from main import SndcpyGUI
 from app.domain.enums.file_type import FileType
 from app.domain.models.file_info import FileInfo
 from app.infrastructure.process.registry import ProcessRegistry
@@ -13,10 +14,10 @@ from app.ui.file_actions import submit_upload_requests
 
 
 class _ImmediateTaskRunner:
-    def start(self, name, group=None, target=None, args=()):
+    def start(self, name, group=None, target=None, args=(), kwargs=None):
         del name, group
         if target is not None:
-            target(*args)
+            target(*args, **(kwargs or {}))
         return SimpleNamespace()
 
 
@@ -24,21 +25,21 @@ class _DeferredSymlinkTaskRunner:
     def __init__(self):
         self._deferred: list[tuple[object, tuple]] = []
 
-    def start(self, name, group=None, target=None, args=()):
+    def start(self, name, group=None, target=None, args=(), kwargs=None):
         del group
         if target is None:
             return SimpleNamespace()
         if name == "files-resolve-symlinks":
-            self._deferred.append((target, args))
+            self._deferred.append((target, args, kwargs or {}))
         else:
-            target(*args)
+            target(*args, **(kwargs or {}))
         return SimpleNamespace()
 
     def run_deferred(self):
         queued = list(self._deferred)
         self._deferred.clear()
-        for target, args in queued:
-            target(*args)
+        for target, args, kwargs in queued:
+            target(*args, **kwargs)
 
 
 class _FakeCommandManager:
@@ -86,16 +87,18 @@ class FileTransferBehaviorTests(unittest.TestCase):
             run_adb_command=lambda cmd, desc: None,
             is_running=lambda: True,
         )
-        progress_events: list[tuple[str, str, int]] = []
+        progress_events: list[tuple[str, str, str, str, int]] = []
         service.file_transfer_progress.connect(
-            lambda status, message, percent: progress_events.append((status, message, percent))
+            lambda status, device_serial, transfer_kind, remote_path, message, percent: progress_events.append(
+                (status, device_serial, transfer_kind, remote_path, message, percent)
+            )
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             fake_uuid = SimpleNamespace(hex="fixed-cache")
 
-            def _fake_transfer(device_serial, cmd, desc, *, emit_done=True):
-                del device_serial, cmd, desc, emit_done
+            def _fake_transfer(device_serial, cmd, desc, *, transfer_kind="", remote_path="", emit_done=True):
+                del device_serial, cmd, desc, transfer_kind, remote_path, emit_done
                 cache_path = os.path.join(temp_dir, "sndcpy_pull_cache", fake_uuid.hex)
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                 with open(cache_path, "w", encoding="utf-8") as file_obj:
@@ -114,7 +117,9 @@ class FileTransferBehaviorTests(unittest.TestCase):
                 service.pull_file("device-1", "/sdcard/demo.txt", temp_dir)
 
         self.assertEqual(progress_events[-1][0], "error")
-        self.assertIn("denied", progress_events[-1][1])
+        self.assertEqual(progress_events[-1][1], "device-1")
+        self.assertEqual(progress_events[-1][2], "pull")
+        self.assertIn("denied", progress_events[-1][4])
 
     def test_stale_symlink_resolution_is_ignored_after_directory_switch(self):
         registry = ProcessRegistry()
@@ -174,6 +179,44 @@ class FileTransferBehaviorTests(unittest.TestCase):
             task_runner.run_deferred()
 
         self.assertEqual(resolved_events, [("device-1", "shared-link", True)])
+
+    def test_refresh_after_transfer_only_targets_matching_push_view(self):
+        gui = SndcpyGUI.__new__(SndcpyGUI)
+        gui.file_device_combo = SimpleNamespace(currentText=lambda: "device-1")
+        gui.remote_path_edit = SimpleNamespace(text=lambda: "/sdcard/Download")
+
+        self.assertTrue(
+            SndcpyGUI._should_refresh_file_view_after_transfer(
+                gui,
+                "device-1",
+                "push",
+                "/sdcard/Download/",
+            )
+        )
+        self.assertFalse(
+            SndcpyGUI._should_refresh_file_view_after_transfer(
+                gui,
+                "device-2",
+                "push",
+                "/sdcard/Download/",
+            )
+        )
+        self.assertFalse(
+            SndcpyGUI._should_refresh_file_view_after_transfer(
+                gui,
+                "device-1",
+                "pull",
+                "/sdcard/Download/",
+            )
+        )
+        self.assertFalse(
+            SndcpyGUI._should_refresh_file_view_after_transfer(
+                gui,
+                "device-1",
+                "push",
+                "/sdcard/Documents/",
+            )
+        )
 
 
 if __name__ == "__main__":

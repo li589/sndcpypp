@@ -42,7 +42,7 @@ class CoreController(QObject):
     files_listed = pyqtSignal(str, list, bool)
     files_listed_detailed = pyqtSignal(str, list, bool)
     symlink_resolved = pyqtSignal(str, str, bool)
-    file_transfer_progress = pyqtSignal(str, str, int)
+    file_transfer_progress = pyqtSignal(str, str, str, str, str, int)
     recording_state_changed = pyqtSignal(object)
 
     def __init__(self, adb_path: str, player_path: str, sndcpy_dir: str):
