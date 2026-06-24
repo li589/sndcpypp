@@ -9,7 +9,13 @@ class ADBClient:
         self._log_callback = log_callback
         self._command_lock = threading.Lock()
 
-    def run_logged(self, command: List[str], description: str = "", cwd: str = None) -> Optional[subprocess.CompletedProcess]:
+    def run_logged(
+        self,
+        command: List[str],
+        description: str = "",
+        cwd: str = None,
+        timeout_seconds: float | None = 15,
+    ) -> Optional[subprocess.CompletedProcess]:
         if not command:
             return None
         resolved_cwd = cwd
@@ -28,7 +34,7 @@ class ADBClient:
                     cwd=resolved_cwd,
                     capture_output=True,
                     text=True,
-                    timeout=15,
+                    timeout=timeout_seconds,
                     creationflags=flags,
                     encoding="utf-8",
                     errors="replace",
@@ -39,7 +45,8 @@ class ADBClient:
                 self._log_callback(self._truncate_for_log(result.stderr.strip()), "error")
             return result
         except subprocess.TimeoutExpired:
-            self._log_callback(f"[{description}] 执行超时 (15s)", "error")
+            timeout_label = f"{timeout_seconds:g}s" if timeout_seconds is not None else "未设置"
+            self._log_callback(f"[{description}] 执行超时 ({timeout_label})", "error")
         except Exception as exc:
             self._log_callback(f"[{description}] 执行失败: {str(exc)}", "error")
         return None

@@ -24,7 +24,7 @@ class DebugCommandService(QObject):
                 if device_serial.strip():
                     full_command.extend(["-s", device_serial])
                 full_command.extend(shlex.split(command_str))
-                self._adb_client.run_logged(full_command, "自定义命令")
+                self._adb_client.run_logged(full_command, "自定义命令", timeout_seconds=None)
                 return
 
             if cmd_type == "scrcpy":
@@ -41,6 +41,6 @@ class DebugCommandService(QObject):
                     return
 
                 cwd = sndcpy_dir if sndcpy_dir and os.path.isdir(sndcpy_dir) else None
-                self._adb_client.run_logged(full_command, f"[{cmd_type}命令]", cwd=cwd)
+                self._adb_client.run_logged(full_command, f"[{cmd_type}命令]", cwd=cwd, timeout_seconds=None)
 
         self._task_runner.start(name="debug-custom-command", group="debug", target=_run)
