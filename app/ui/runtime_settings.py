@@ -60,8 +60,8 @@ def get_default_player_path(app_base_dir: str) -> str:
 
     if os.name == "nt":
         program_files_dirs = [
-            os.environ.get("ProgramFiles", ""),
-            os.environ.get("ProgramFiles(x86)", ""),
+            os.environ.get("PROGRAMFILES", ""),
+            os.environ.get("PROGRAMFILES(X86)", ""),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs"),
         ]
         for base_dir in program_files_dirs:

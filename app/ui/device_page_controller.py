@@ -1,6 +1,8 @@
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QComboBox, QListWidget, QListWidgetItem
 
 from app.ui.message_templates import device_count_status_text
+from app.ui.widgets import DeviceListItemWidget
 
 
 class DevicePageController:
@@ -61,6 +63,7 @@ class DevicePageController:
         for device in devices:
             item = QListWidgetItem(device)
             self._device_list.addItem(item)
+            self._attach_device_item_widget(item, device)
             if device == selected_device:
                 item.setSelected(True)
 
@@ -68,6 +71,37 @@ class DevicePageController:
         self._sync_combo(self._recording_device_combo, devices)
         self._sync_combo(self._file_device_combo, devices)
         self._status_setter(device_count_status_text(len(devices)))
+        self.refresh_device_status_indicators()
+
+    def _attach_device_item_widget(self, item: QListWidgetItem, device: str) -> None:
+        """为设备列表项绑定状态指示 widget；测试环境（mock）下静默跳过。"""
+        try:
+            widget = DeviceListItemWidget(device, self._device_list)
+            self._device_list.setItemWidget(item, widget)
+        except Exception:
+            pass
+
+    def refresh_device_status_indicators(self) -> None:
+        """遍历设备列表，查询每台设备的音频/视频/录制状态并更新指示 widget。"""
+        controller = self._core_provider()
+        if controller is None:
+            return
+        for i in range(self._device_list.count()):
+            item = self._device_list.item(i)
+            if item is None:
+                continue
+            widget = self._device_list.itemWidget(item)
+            if widget is None:
+                continue
+            try:
+                status = controller.get_device_route_status(item.text())
+            except Exception:
+                continue
+            widget.update_status(
+                audio=bool(status.get("audio", False)),
+                video=bool(status.get("video", False)),
+                recording=bool(status.get("recording", False)),
+            )
 
     def get_selected_device(self, show_warning: bool = True) -> str | None:
         selected_items = self._device_list.selectedItems()
@@ -84,8 +118,10 @@ class DevicePageController:
         combo.clear()
         for item in special_items:
             combo.addItem(item)
+            combo.setItemData(combo.count() - 1, item, Qt.ItemDataRole.ToolTipRole)
         for device in devices:
             combo.addItem(device)
+            combo.setItemData(combo.count() - 1, device, Qt.ItemDataRole.ToolTipRole)
 
         idx = combo.findText(current_text)
         if idx >= 0:
@@ -95,4 +131,5 @@ class DevicePageController:
                 combo.setCurrentIndex(len(special_items))
             else:
                 combo.setCurrentIndex(0)
+        combo.setToolTip(combo.currentText())
         combo.blockSignals(False)

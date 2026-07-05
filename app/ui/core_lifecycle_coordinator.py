@@ -1,6 +1,6 @@
+import contextlib
 from collections.abc import Callable
 
-from app.domain.models.operation_requests import RuntimeConfigurationRequest
 from app.infrastructure.adb.path_resolver import ResolvedADBPath
 from app.ui.message_templates import (
     log_adb_resolution_builtin,
@@ -119,10 +119,8 @@ def disconnect_core_signals(controller: CoreController | None, slots: dict[str, 
     if controller is None:
         return
     for signal, slot in build_signal_pairs(controller, slots):
-        try:
+        with contextlib.suppress(TypeError):
             signal.disconnect(slot)
-        except TypeError:
-            pass
 
 
 def recreate_core_controller(

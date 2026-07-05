@@ -8,6 +8,5 @@ import sys
 
 from app.main import ApplicationEntry
 
-
 if __name__ == "__main__":
     sys.exit(ApplicationEntry().run())

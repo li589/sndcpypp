@@ -1,0 +1,136 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sndcpypp"
+version = "0.1.0"
+description = "Android 设备音频路由、视频投屏、录制、文件传输的桌面控制中心"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+authors = [{ name = "sndcpy++ contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Communications :: Telephony",
+]
+
+[project.urls]
+Homepage = "https://github.com/li589/sndcpypp"
+Repository = "https://github.com/li589/sndcpypp"
+Issues = "https://github.com/li589/sndcpypp/issues"
+Changelog = "https://github.com/li589/sndcpypp/blob/main/CHANGELOG.md"
+
+# ──────────────────────────── Ruff ────────────────────────────
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    "venv",
+    "build",
+    "dist",
+    "AudioRouter/third_party",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # Pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "C4",    # flake8-comprehensions
+    "FA",    # flake8-future-annotations
+    "TID",   # flake8-tidy-imports
+    "RUF",   # Ruff-specific rules
+]
+ignore = [
+    "E402",  # module level import not at top (PyInstaller/条件导入场景)
+    "E501",  # line-too-long (中文消息/URL/路径容易超 120，ruff format 不主动断行)
+    "B008",  # Do not perform function call in argument defaults (PyQt signal 习惯)
+    "SIM102", # 嵌套 if 可合并 (合并后可读性反而下降)
+    "SIM108", # if-else 用三元表达式 (可读性优先)
+    "SIM115", # open without with (Popen 需 file handle 存活，with 不适用)
+    "RUF001", # string literal 中文标点 (中文项目)
+    "RUF002", # docstring 中文引号 (中文项目)
+    "RUF003", # comment 中文引号 (中文项目)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501", "B011"]  # 测试代码放宽行宽、允许 assert False
+"AudioRouter/*" = ["ALL"]      # C++ 子项目不参与 lint
+"vendor/*" = ["ALL"]           # vendor 二进制目录
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "core"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ──────────────────────────── MyPy ────────────────────────────
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = false        # 渐进启用：现有代码有 48 个方法缺注解
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true          # 禁止 str = None 隐式 Optional
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+exclude = [
+    "venv/",
+    "build/",
+    "dist/",
+    "AudioRouter/third_party/",
+    "vendor/",
+]
+
+[[tool.mypy.overrides]]
+module = "PyQt6.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "wmi.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# win32api/win32con/win32gui/pythoncom 是顶层模块，win32.* 匹配 win32.something
+module = ["win32.*", "win32api", "win32con", "win32gui", "pythoncom"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "usb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# 非 Windows 平台缺失的模块
+module = ["pyudev", "Foundation.*", "PyObjCTools.*"]
+ignore_missing_imports = true
+
+# ──────────────────────────── Pytest ────────────────────────────
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["*Tests"]
+python_functions = ["test_*"]

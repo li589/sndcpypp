@@ -25,10 +25,7 @@ class ProcessRegistry:
         reg = self.ensure(device_serial)
         with reg["lock"]:
             if group in reg:
-                reg[group] = [
-                    existing for existing in reg[group]
-                    if getattr(existing, "poll", lambda: 0)() is None
-                ]
+                reg[group] = [existing for existing in reg[group] if getattr(existing, "poll", lambda: 0)() is None]
                 reg[group].append(proc)
 
     def keys(self):

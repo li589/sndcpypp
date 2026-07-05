@@ -2,8 +2,8 @@ from collections.abc import Callable
 
 from PyQt6.QtCore import QTimer
 
-from app.ui.interaction_helpers import ensure_trailing_slash
 from app.ui.file_table_presenter import populate_file_table, update_symlink_in_table
+from app.ui.interaction_helpers import ensure_trailing_slash
 from app.ui.message_templates import (
     file_status_read_failed,
     log_loaded_items,

@@ -51,7 +51,7 @@ class JsonSettingsStore:
         settings = self.build_defaults()
         if os.path.exists(self.file_path):
             try:
-                with open(self.file_path, "r", encoding="utf-8") as file:
+                with open(self.file_path, encoding="utf-8") as file:
                     loaded_settings = json.load(file)
                 if not isinstance(loaded_settings, dict):
                     raise ValueError("设置文件根节点必须是 JSON 对象")

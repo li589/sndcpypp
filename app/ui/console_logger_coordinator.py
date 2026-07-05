@@ -1,11 +1,10 @@
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import QTextEdit
 
 from app.ui.message_templates import render_console_html
-
 
 _DEDUP_WINDOW_SECONDS = 1.5
 

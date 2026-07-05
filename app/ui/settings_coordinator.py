@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from app.ui.message_templates import CMD_SETTINGS_TITLES, log_extra_params_updated, log_settings_save_failed
+from app.ui.message_templates import CMD_SETTINGS_TITLES, log_settings_save_failed
 from app.ui.runtime_settings import apply_ui_settings, collect_ui_settings
 
 

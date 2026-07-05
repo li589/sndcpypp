@@ -15,7 +15,6 @@ from app.ui.message_templates import (
     tray_recording_reminder_title,
 )
 
-
 LONG_RECORDING_REMINDER_SECONDS = 30 * 60
 
 
@@ -83,10 +82,7 @@ class RecordingSessionCoordinator:
             return
 
         now = datetime.now()
-        elapsed_seconds = max(
-            int((now - session.started_at).total_seconds())
-            for session in self._sessions.values()
-        )
+        elapsed_seconds = max(int((now - session.started_at).total_seconds()) for session in self._sessions.values())
         elapsed_text = _format_elapsed_seconds(elapsed_seconds)
 
         if len(self._sessions) == 1:
@@ -94,9 +90,7 @@ class RecordingSessionCoordinator:
             self._set_status(status_recording_active(device_serial, elapsed_text))
             return
 
-        self._set_status(
-            status_recording_active_multi(len(self._sessions), elapsed_text)
-        )
+        self._set_status(status_recording_active_multi(len(self._sessions), elapsed_text))
 
     def _check_long_recording_reminders(self) -> None:
         if not self._sessions:

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import signal
 import subprocess
@@ -21,14 +22,10 @@ class ProcessSupervisor:
                 try:
                     if group == "record":
                         if os.name == "nt":
-                            try:
+                            with contextlib.suppress(Exception):
                                 os.kill(proc.pid, getattr(signal, "CTRL_BREAK_EVENT", 1))
-                            except Exception:
-                                pass
-                            try:
+                            with contextlib.suppress(Exception):
                                 os.kill(proc.pid, getattr(signal, "CTRL_C_EVENT", 0))
-                            except Exception:
-                                pass
                             subprocess.run(
                                 ["taskkill", "/PID", str(proc.pid)],
                                 creationflags=subprocess.CREATE_NO_WINDOW,

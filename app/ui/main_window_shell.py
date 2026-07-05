@@ -109,12 +109,7 @@ def is_foreground_fullscreen(window) -> bool:
                     monitor = win32api.MonitorFromWindow(hwnd)
                     monitor_info = win32api.GetMonitorInfo(monitor)
                     work_left, work_top, work_right, work_bottom = monitor_info["Monitor"]
-                    return (
-                        left <= work_left
-                        and top <= work_top
-                        and right >= work_right
-                        and bottom >= work_bottom
-                    )
+                    return left <= work_left and top <= work_top and right >= work_right and bottom >= work_bottom
                 except Exception:
                     pass
     return bool(window.windowState() & Qt.WindowState.WindowFullScreen) or window.isFullScreen()

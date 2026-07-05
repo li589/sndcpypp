@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+
+from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 
 
 class ConsoleTargetKind(str, Enum):
@@ -50,7 +51,7 @@ class RoutingRequest:
     show_fps: bool = False
     stay_awake: bool = True
     turn_screen_off: bool = True
-    audio_port: int = 28200
+    audio_port: int = DEFAULT_AUDIO_PORT
 
 
 @dataclass(slots=True)
@@ -74,7 +75,7 @@ class PushFileRequest:
     device_serial: str
     local_path: str
     remote_dir: str
-    rename_to: Optional[str] = None
+    rename_to: str | None = None
 
 
 @dataclass(slots=True)
@@ -82,4 +83,4 @@ class PullFileRequest:
     device_serial: str
     remote_path: str
     local_dir: str
-    rename_to: Optional[str] = None
+    rename_to: str | None = None

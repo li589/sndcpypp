@@ -1,8 +1,7 @@
-from typing import Callable
+from collections.abc import Callable
 
 from app.ui.dialogs import ExitAction
 from app.ui.message_templates import log_cleanup_processes
-
 
 _SHUTDOWN_TIMEOUT_SECONDS = 8
 

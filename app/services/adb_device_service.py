@@ -3,11 +3,12 @@ import shlex
 import shutil
 import subprocess
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from app.infrastructure.config.logging_config import get_logger
+
 from app.infrastructure.adb.path_resolver import resolve_apk_path, resolve_vendor_tool_path
+from app.infrastructure.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,7 +26,7 @@ class ADBDeviceService(QObject):
     def __init__(
         self,
         cmd_manager,
-        run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
+        run_adb_command: Callable[[list[str], str], subprocess.CompletedProcess | None],
         task_runner,
         project_root: str | None = None,
     ):
@@ -53,9 +54,7 @@ class ADBDeviceService(QObject):
                     return True
                 if shutil.which(path_str):
                     return True
-                if os.name == "nt" and os.path.isfile(path_str):
-                    return True
-                return False
+                return bool(os.name == "nt" and os.path.isfile(path_str))
 
             if is_exe(adb_path):
                 results[0] = 1
@@ -111,9 +110,13 @@ class ADBDeviceService(QObject):
                 if result is None or result.returncode != 0:
                     self.log_message.emit("设备刷新失败，本次结果已忽略。", "error")
                     return
-                devices = [line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line]
+                devices = [
+                    line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line
+                ]
                 stderr_text = result.stderr or ""
-                if not devices and ("daemon started successfully" in stderr_text or "daemon not running" in stderr_text):
+                if not devices and (
+                    "daemon started successfully" in stderr_text or "daemon not running" in stderr_text
+                ):
                     self.log_message.emit("ADB 刚启动完成，等待设备枚举后自动重试...", "warning")
                     for retry_index in range(2):
                         time.sleep(1.0)
@@ -122,13 +125,17 @@ class ADBDeviceService(QObject):
                             continue
                         if result.returncode != 0:
                             continue
-                        devices = [line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line]
+                        devices = [
+                            line.split("\t")[0]
+                            for line in result.stdout.splitlines()[1:]
+                            if line.strip() and "device" in line
+                        ]
                         if devices:
                             break
                 self._emit_device_summary(devices)
                 self.devices_updated.emit(devices)
             except Exception as exc:
-                self.log_message.emit(f"刷新设备列表异常: {str(exc)}", "error")
+                self.log_message.emit(f"刷新设备列表异常: {exc!s}", "error")
             finally:
                 self._is_refreshing = False
                 if self._refresh_pending:
@@ -170,7 +177,9 @@ class ADBDeviceService(QObject):
                     )
                     # #endregion
                     self.log_message.emit("尝试卸载旧版本并重新安装...", "warning")
-                    self._run_adb_command(self._cmd_manager.get_target_cmd("uninstall_apk_cmd", device_serial=device_serial), "卸载旧版本")
+                    self._run_adb_command(
+                        self._cmd_manager.get_target_cmd("uninstall_apk_cmd", device_serial=device_serial), "卸载旧版本"
+                    )
                     res = self._run_adb_command(
                         self._cmd_manager.get_target_cmd("install_apk_install_cmd", device_serial=device_serial),
                         "重新安装APK",
@@ -201,7 +210,7 @@ class ADBDeviceService(QObject):
                     self.log_message.emit(f"APK安装失败: {error_text}", "error")
                 self.operation_completed.emit("install", success)
             except Exception as exc:
-                self.log_message.emit(f"安装过程出错: {str(exc)}", "error")
+                self.log_message.emit(f"安装过程出错: {exc!s}", "error")
                 self.operation_completed.emit("install", False)
 
         self._task_runner.start(name="adb-install-apk", group="adb", target=_install)
@@ -221,14 +230,16 @@ class ADBDeviceService(QObject):
                         errors="replace",
                     )
                 else:
-                    res = subprocess.run(["pkill", "-f", "adb"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                    res = subprocess.run(
+                        ["pkill", "-f", "adb"], capture_output=True, text=True, encoding="utf-8", errors="replace"
+                    )
 
                 if "拒绝访问" in res.stderr or "Access is denied" in res.stderr:
                     self.log_message.emit("结束失败：拒绝访问！请【以管理员身份运行本程序】。", "error")
                 else:
                     self.log_message.emit("ADB 进程清理指令执行完毕。", "success")
             except Exception as exc:
-                self.log_message.emit(f"强杀过程异常: {str(exc)}", "error")
+                self.log_message.emit(f"强杀过程异常: {exc!s}", "error")
 
         self._task_runner.start(name="adb-force-kill", group="adb", target=_kill)
 
@@ -294,7 +305,7 @@ class ADBDeviceService(QObject):
         return self._is_sndcpy_installed(device_serial)
 
     @staticmethod
-    def _result_text(result: Optional[subprocess.CompletedProcess]) -> str:
+    def _result_text(result: subprocess.CompletedProcess | None) -> str:
         if result is None:
             return ""
         stdout = (result.stdout or "").strip()
@@ -302,25 +313,21 @@ class ADBDeviceService(QObject):
         return "\n".join(part for part in (stdout, stderr) if part)
 
     @classmethod
-    def _install_succeeded(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+    def _install_succeeded(cls, result: subprocess.CompletedProcess | None) -> bool:
         if result is None:
             return False
         output = cls._result_text(result).lower()
-        if result.returncode == 0 and (
-            "success" in output
-            or "successfully" in output
-            or output == ""
-        ):
-            return True
-        return False
+        return result.returncode == 0 and ("success" in output or "successfully" in output or output == "")
 
     @classmethod
-    def _install_indicates_existing_package(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+    def _install_indicates_existing_package(cls, result: subprocess.CompletedProcess | None) -> bool:
         output = cls._result_text(result).lower()
-        return any(token in output for token in ("already exists", "install_failed_already_exists", "already installed"))
+        return any(
+            token in output for token in ("already exists", "install_failed_already_exists", "already installed")
+        )
 
     @classmethod
-    def _should_wait_for_install_confirmation(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+    def _should_wait_for_install_confirmation(cls, result: subprocess.CompletedProcess | None) -> bool:
         if result is None:
             return False
         output = cls._result_text(result).lower()
@@ -339,7 +346,7 @@ class ADBDeviceService(QObject):
         return result.returncode != 0 or "performing streamed install" in output
 
     @classmethod
-    def _should_retry_install(cls, result: Optional[subprocess.CompletedProcess]) -> bool:
+    def _should_retry_install(cls, result: subprocess.CompletedProcess | None) -> bool:
         if result is None or cls._install_succeeded(result):
             return False
         output = cls._result_text(result).lower()

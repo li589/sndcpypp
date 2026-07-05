@@ -40,7 +40,7 @@ class _FakeADBClient:
         self,
         command: list,
         description: str = "",
-        cwd: str = None,
+        cwd: str | None = None,
         timeout_seconds: float | None = 15,
     ):
         self.calls.append((command, description, cwd, timeout_seconds))
@@ -107,7 +107,7 @@ class DebugCommandServiceTests(unittest.TestCase):
         logs: list[tuple[str, str]] = []
         service.log_message.connect(lambda message, level: logs.append((message, level)))
 
-        service.execute_custom_cmd("", "\"unterminated", "adb")
+        service.execute_custom_cmd("", '"unterminated', "adb")
         task_runner.tasks.pop(0)()
 
         self.assertEqual(adb_client.calls, [])
@@ -120,16 +120,20 @@ class ADBClientTests(unittest.TestCase):
         client = ADBClient(lambda message, level: logs.append((message, level)))
         completed = SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch(
-            "app.infrastructure.adb.adb_client.os.path.isfile",
-            side_effect=lambda path: path == r"C:\tools\adb\adb.exe",
-        ), patch(
-            "app.infrastructure.adb.adb_client.shutil.which",
-            return_value=r"C:\tools\adb\adb.exe",
-        ), patch(
-            "app.infrastructure.adb.adb_client.subprocess.run",
-            return_value=completed,
-        ) as mock_run:
+        with (
+            patch(
+                "app.infrastructure.adb.adb_client.os.path.isfile",
+                side_effect=lambda path: path == r"C:\tools\adb\adb.exe",
+            ),
+            patch(
+                "app.infrastructure.adb.adb_client.shutil.which",
+                return_value=r"C:\tools\adb\adb.exe",
+            ),
+            patch(
+                "app.infrastructure.adb.adb_client.subprocess.run",
+                return_value=completed,
+            ) as mock_run,
+        ):
             result = client.run_logged(["adb", "version"], "测试命令")
 
         self.assertIs(result, completed)

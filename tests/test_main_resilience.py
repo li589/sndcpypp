@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import app.ui.main_window as main_window
-
 from app.ui.dialogs import ExitAction
 from app.ui.main_window import SndcpyGUI
 from core import CoreController
@@ -11,11 +10,14 @@ from core import CoreController
 
 class MainResilienceTests(unittest.TestCase):
     def test_resolve_app_base_dir_uses_pyinstaller_meipass_when_frozen(self):
-        with patch.object(main_window.sys, "frozen", True, create=True), patch.object(
-            main_window.sys,
-            "_MEIPASS",
-            "D:/Temp/_MEI123",
-            create=True,
+        with (
+            patch.object(main_window.sys, "frozen", True, create=True),
+            patch.object(
+                main_window.sys,
+                "_MEIPASS",
+                "D:/Temp/_MEI123",
+                create=True,
+            ),
         ):
             self.assertEqual(main_window._resolve_app_base_dir(), "D:\\Temp\\_MEI123")
 
@@ -99,7 +101,8 @@ class MainResilienceTests(unittest.TestCase):
             _adb_client=SimpleNamespace(
                 run_logged=lambda command, description, timeout_seconds=15: captured.append(
                     (command, description, timeout_seconds)
-                ) or "ok"
+                )
+                or "ok"
             )
         )
 

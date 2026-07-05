@@ -1,9 +1,8 @@
 import subprocess
-from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, QObject
-from app.domain.enums.file_type import FileType
-from app.domain.models.file_info import FileInfo
+from PyQt6.QtCore import QObject, pyqtSignal
+
+from app.domain.enums.file_type import FileType  # noqa: F401  re-export for tests/test_ui_controllers.py
 from app.domain.models.operation_requests import (
     BrowseFilesRequest,
     ConsoleCommandRequest,
@@ -11,13 +10,13 @@ from app.domain.models.operation_requests import (
     PullFileRequest,
     PushFileRequest,
     RecordingRequest,
-    RecordingStateEvent,
-    RuntimeConfigurationRequest,
     RoutingRequest,
+    RuntimeConfigurationRequest,
 )
 from app.infrastructure.adb.adb_client import ADBClient
 from app.infrastructure.adb.command_builder import ADBCommandBuilder
 from app.infrastructure.adb.scrcpy_capabilities import ScrcpyCapabilitiesProbe
+from app.infrastructure.config.constants import ADB_DEFAULT_TIMEOUT, DEFAULT_AUDIO_PORT
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
 from app.infrastructure.process.task_runner import BackgroundTaskRunner, TaskSnapshot
@@ -28,17 +27,18 @@ from app.services.recording_service import RecordingService
 from app.services.route_service import RouteService
 from app.ui.message_templates import log_background_task_failed
 
-
 ADBCommand = ADBCommandBuilder
+
 
 class CoreController(QObject):
     """UI 与底层 service 之间的统一接口。"""
+
     devices_updated = pyqtSignal(list)
     log_message = pyqtSignal(str, str)
     operation_completed = pyqtSignal(str, bool)
     validation_result = pyqtSignal(list)
     player_process_exited = pyqtSignal(str)
-    
+
     files_listed = pyqtSignal(str, list, bool)
     files_listed_detailed = pyqtSignal(str, list, bool)
     symlink_resolved = pyqtSignal(str, str, bool)
@@ -113,12 +113,12 @@ class CoreController(QObject):
         self._file_manager_service.log_message.connect(self.log_message.emit)
 
     # Runtime lifecycle
-    def update_config(self, adb_path: str, player_path: str, sndcpy_dir: str):
+    def update_config(self, adb_path: str, player_path: str, sndcpy_dir: str) -> None:
         self._cmd_manager.update_variable("adb_path", adb_path)
         self._cmd_manager.update_variable("player_path", player_path)
         self._cmd_manager.update_variable("sndcpy_dir", sndcpy_dir)
 
-    def update_extra_args(self, adb_extra: str, player_extra: str, scrcpy_extra: str):
+    def update_extra_args(self, adb_extra: str, player_extra: str, scrcpy_extra: str) -> None:
         self._cmd_manager.update_variable("adb_extra", adb_extra)
         self._cmd_manager.update_variable("player_extra", player_extra)
         self._cmd_manager.update_variable("scrcpy_extra", scrcpy_extra)
@@ -131,11 +131,11 @@ class CoreController(QObject):
         adb_extra: str = "",
         player_extra: str = "",
         scrcpy_extra: str = "",
-    ):
+    ) -> None:
         self.update_config(adb_path, player_path, sndcpy_dir)
         self.update_extra_args(adb_extra, player_extra, scrcpy_extra)
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
         self.stop_streaming(None)
         self.stop_recording(None)
@@ -149,7 +149,7 @@ class CoreController(QObject):
         self.stop()
         return self.wait_for_background_tasks(timeout=timeout)
 
-    def _handle_task_runner_event(self, task: TaskSnapshot):
+    def _handle_task_runner_event(self, task: TaskSnapshot) -> None:
         if task.status != "failed":
             return
         self.log_message.emit(
@@ -179,7 +179,7 @@ class CoreController(QObject):
             only_completed=only_completed,
         )
 
-    def request_configure_runtime(self, request: RuntimeConfigurationRequest):
+    def request_configure_runtime(self, request: RuntimeConfigurationRequest) -> None:
         self.configure_runtime(
             adb_path=request.adb_path,
             player_path=request.player_path,
@@ -189,79 +189,88 @@ class CoreController(QObject):
             scrcpy_extra=request.scrcpy_extra,
         )
 
-    def request_shutdown(self):
+    def request_shutdown(self) -> None:
         self.stop()
 
     # Debug console
-    def execute_custom_cmd(self, device_serial: str, command_str: str, cmd_type: str = "adb"):
+    def execute_custom_cmd(self, device_serial: str, command_str: str, cmd_type: str = "adb") -> None:
         self._debug_command_service.execute_custom_cmd(device_serial, command_str, cmd_type)
 
-    def request_execute_custom_cmd(self, device_serial: str, command_str: str, cmd_type: str = "adb"):
+    def request_execute_custom_cmd(self, device_serial: str, command_str: str, cmd_type: str = "adb") -> None:
         self.execute_custom_cmd(device_serial, command_str, cmd_type)
 
     # Device and ADB
-    def validate_paths(self):
+    def validate_paths(self) -> None:
         self._adb_device_service.validate_paths()
 
-    def request_validate_runtime(self):
+    def request_validate_runtime(self) -> None:
         self.validate_paths()
 
-    def refresh_devices(self):
+    def refresh_devices(self) -> None:
         self._adb_device_service.refresh_devices()
 
-    def request_refresh_devices(self):
+    def request_refresh_devices(self) -> None:
         self.refresh_devices()
 
-    def install_apk(self, device_serial: str):
+    def install_apk(self, device_serial: str) -> None:
         self._adb_device_service.install_apk(device_serial)
 
-    def request_install_apk(self, device_serial: str):
+    def request_install_apk(self, device_serial: str) -> None:
         self.install_apk(device_serial)
 
-    def _probe_scrcpy_features(self):
+    def _probe_scrcpy_features(self) -> dict:
         scrcpy_path = self._cmd_manager.get_variable("scrcpy_path")
         return self._scrcpy_capabilities_probe.probe(scrcpy_path)
 
-    def prewarm_scrcpy_capabilities(self):
+    def prewarm_scrcpy_capabilities(self) -> None:
         self._task_runner.start(
             name="core-prewarm-scrcpy-features",
             group="core",
             target=self._probe_scrcpy_features,
         )
 
-    def request_prewarm_scrcpy_capabilities(self):
+    def request_prewarm_scrcpy_capabilities(self) -> None:
         self.prewarm_scrcpy_capabilities()
 
     # Routing
-    def stop_audio(self, device_serial: str):
+    def stop_audio(self, device_serial: str) -> None:
         self._route_service.stop_audio(device_serial)
 
-    def stop_all_audio(self):
+    def stop_all_audio(self) -> None:
         for device_serial in self.list_managed_devices():
             self._route_service.stop_audio(device_serial)
 
-    def stop_audio_routes(self, device_serial: Optional[str] = None):
+    def stop_audio_routes(self, device_serial: str | None = None) -> None:
         if device_serial:
             self.stop_audio(device_serial)
             return
         self.stop_all_audio()
 
-    def request_stop_audio_routes(self, device_serial: Optional[str] = None):
+    def request_stop_audio_routes(self, device_serial: str | None = None) -> None:
         self.stop_audio_routes(device_serial)
 
-    def start_audio_route(self, device_serial: str, port: int = 28200):
+    def start_audio_route(self, device_serial: str, port: int = DEFAULT_AUDIO_PORT) -> None:
         self._route_service.start_audio_route(device_serial, port)
 
-    def request_start_audio_route(self, device_serial: str, port: int = 28200):
+    def request_start_audio_route(self, device_serial: str, port: int = DEFAULT_AUDIO_PORT) -> None:
         self.start_audio_route(device_serial, port)
 
-    def start_routing_session(self, request: RoutingRequest):
+    def start_routing_session(self, request: RoutingRequest) -> None:
         self._route_service.start_routing_session(request)
 
-    def request_start_routing_session(self, request: RoutingRequest):
+    def request_start_routing_session(self, request: RoutingRequest) -> None:
         self.start_routing_session(request)
 
-    def start_video_route(self, device_serial: str, bitrate: int = 8000, max_size: str = "原始", lock_ori_index: int = 0, show_fps: bool = False, stay_awake: bool = True, turn_screen_off: bool = True):
+    def start_video_route(
+        self,
+        device_serial: str,
+        bitrate: int = 8000,
+        max_size: str = "原始",
+        lock_ori_index: int = 0,
+        show_fps: bool = False,
+        stay_awake: bool = True,
+        turn_screen_off: bool = True,
+    ) -> None:
         self._route_service.start_video_route(
             device_serial=device_serial,
             bitrate=bitrate,
@@ -271,15 +280,15 @@ class CoreController(QObject):
             stay_awake=stay_awake,
             turn_screen_off=turn_screen_off,
         )
-    
-    def stop_streaming(self, device_serial: Optional[str] = None):
+
+    def stop_streaming(self, device_serial: str | None = None) -> None:
         self._route_service.stop_streaming(device_serial)
 
-    def request_stop_streaming(self, device_serial: Optional[str] = None):
+    def request_stop_streaming(self, device_serial: str | None = None) -> None:
         self.stop_streaming(device_serial)
 
     # Recording
-    def start_recording(self, request: RecordingRequest):
+    def start_recording(self, request: RecordingRequest) -> None:
         self._recording_service.start_recording(
             device_serial=request.device_serial,
             save_path=request.save_path,
@@ -288,54 +297,62 @@ class CoreController(QObject):
             record_audio=request.record_audio,
             record_ori_index=request.record_ori_index,
         )
-    
+
     def is_audio_running(self, device_serial: str) -> bool:
         return self._route_service.is_audio_running(device_serial)
 
-    def stop_recording(self, device_serial: Optional[str] = None):
+    def get_device_route_status(self, device_serial: str) -> dict:
+        """返回指定设备的音频/视频/录制运行状态，用于 UI 状态指示器刷新。"""
+        return {
+            "audio": self._route_service.is_audio_running(device_serial),
+            "video": self._route_service.is_video_running(device_serial),
+            "recording": self._recording_service.is_recording_running(device_serial),
+        }
+
+    def stop_recording(self, device_serial: str | None = None) -> None:
         self._recording_service.stop_recording(device_serial)
 
-    def request_start_recording(self, request: RecordingRequest):
+    def request_start_recording(self, request: RecordingRequest) -> None:
         self.start_recording(request)
 
-    def request_stop_recording(self, device_serial: str = ""):
+    def request_stop_recording(self, device_serial: str = "") -> None:
         self.stop_recording(device_serial or None)
 
     # File transfer
-    def list_device_files(self, device_serial: str, path: str):
+    def list_device_files(self, device_serial: str, path: str) -> None:
         self._file_manager_service.list_device_files(device_serial, path)
-        
-    def list_device_files_detailed(self, device_serial: str, path: str):
+
+    def list_device_files_detailed(self, device_serial: str, path: str) -> None:
         self._file_manager_service.list_device_files_detailed(device_serial, path)
 
-    def request_list_device_files(self, request: BrowseFilesRequest):
+    def request_list_device_files(self, request: BrowseFilesRequest) -> str:
         normalized_path = request.remote_path.strip() or "/"
         if not normalized_path.endswith("/"):
             normalized_path += "/"
         self.list_device_files_detailed(request.device_serial, normalized_path)
         return normalized_path
 
-    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str = None):
+    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str | None = None) -> None:
         self._file_manager_service.pull_file(device_serial, remote_path, local_dir, rename_to)
 
-    def request_pull_file(self, request: PullFileRequest):
+    def request_pull_file(self, request: PullFileRequest) -> None:
         self.pull_file(request.device_serial, request.remote_path, request.local_dir, request.rename_to)
 
-    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str = None):
+    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str | None = None) -> None:
         self._file_manager_service.push_file(device_serial, local_path, remote_dir, rename_to)
 
-    def request_push_file(self, request: PushFileRequest):
+    def request_push_file(self, request: PushFileRequest) -> None:
         normalized_dir = request.remote_dir if request.remote_dir.endswith("/") else f"{request.remote_dir}/"
         self.push_file(request.device_serial, request.local_path, normalized_dir, request.rename_to)
-        
-    def stop_file_transfers(self, device_serial: Optional[str] = None):
+
+    def stop_file_transfers(self, device_serial: str | None = None) -> None:
         self._file_manager_service.stop_file_transfers(device_serial)
 
     def list_managed_devices(self) -> list[str]:
         return list(self._process_registry.keys())
 
     # ADB process management
-    def force_kill_adb(self):
+    def force_kill_adb(self) -> None:
         route_service = getattr(self, "_route_service", None)
         stop_streaming_sync = getattr(route_service, "stop_streaming_sync", None)
         if callable(stop_streaming_sync):
@@ -344,16 +361,16 @@ class CoreController(QObject):
             self.stop_streaming(None)
         self._adb_device_service.force_kill_adb()
 
-    def request_force_kill_adb(self):
+    def request_force_kill_adb(self) -> None:
         self.force_kill_adb()
 
-    def start_adb_server(self):
+    def start_adb_server(self) -> None:
         self._adb_device_service.start_adb_server()
 
-    def request_start_adb_server(self):
+    def request_start_adb_server(self) -> None:
         self.start_adb_server()
 
-    def restart_adb(self):
+    def restart_adb(self) -> None:
         route_service = getattr(self, "_route_service", None)
         stop_streaming_sync = getattr(route_service, "stop_streaming_sync", None)
         if callable(stop_streaming_sync):
@@ -362,10 +379,10 @@ class CoreController(QObject):
             self.stop_streaming(None)
         self._adb_device_service.restart_adb()
 
-    def request_restart_adb(self):
+    def request_restart_adb(self) -> None:
         self.restart_adb()
 
-    def execute_console_target(self, request: ConsoleCommandRequest):
+    def execute_console_target(self, request: ConsoleCommandRequest) -> None:
         device_serial = request.device_serial
         cmd_type = "adb"
         if request.target_kind == ConsoleTargetKind.SCRCPY:
@@ -376,14 +393,14 @@ class CoreController(QObject):
 
         self.execute_custom_cmd(device_serial, request.command_str, cmd_type)
 
-    def request_execute_console_target(self, request: ConsoleCommandRequest):
+    def request_execute_console_target(self, request: ConsoleCommandRequest) -> None:
         self.execute_console_target(request)
 
     # Legacy/internal compatibility
     def _run_adb_command_internal(
         self,
-        command: List[str],
+        command: list[str],
         description: str = "",
-        timeout_seconds: float | None = 15,
-    ) -> Optional[subprocess.CompletedProcess]:
+        timeout_seconds: float | None = ADB_DEFAULT_TIMEOUT,
+    ) -> subprocess.CompletedProcess | None:
         return self._adb_client.run_logged(command, description, timeout_seconds=timeout_seconds)

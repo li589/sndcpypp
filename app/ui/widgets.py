@@ -1,9 +1,10 @@
 from PyQt6.QtCore import QRect, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPaintEvent, QPainter
+from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -34,10 +35,12 @@ class AutoExpandTextEdit(QTextEdit):
         self.setAcceptRichText(False)
         self.min_height = 32
         self.max_height = 120
-        self.setFixedHeight(self.min_height)
+        # 用 setMinimumHeight + Expanding sizePolicy 替代 setFixedHeight，
+        # 让 splitter 拖动时输入框能跟随变高，同时保留按内容自动撑高的行为。
+        self.setMinimumHeight(self.min_height)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setStyleSheet(
-            "background-color: #252526; color: #CCCCCC; border: 1px solid #3A3A3D; "
-            "border-radius: 3px; padding: 4px;"
+            "background-color: #252526; color: #CCCCCC; border: 1px solid #3A3A3D; " "border-radius: 3px; padding: 4px;"
         )
 
     def keyPressEvent(self, event: QKeyEvent | None):
@@ -54,7 +57,9 @@ class AutoExpandTextEdit(QTextEdit):
         margins = self.contentsMargins()
         new_height = doc_height + margins.top() + margins.bottom() + 4
         new_height = max(self.min_height, min(new_height, self.max_height))
-        self.setFixedHeight(new_height)
+        # 只调整最小高度，让 splitter 能在此基础上拉伸；
+        # 不再用 setFixedHeight 锁死高度。
+        self.setMinimumHeight(new_height)
         if doc_height > self.max_height - 10:
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         else:
@@ -113,7 +118,9 @@ class SwitchControl(QWidget):
         painter.drawRoundedRect(0, 0, self.width(), self.height(), self.height() // 2, self.height() // 2)
 
         painter.setBrush(QColor(255, 255, 255))
-        painter.drawEllipse(self.thumb_pos, self.margin, self.height() - 2 * self.margin, self.height() - 2 * self.margin)
+        painter.drawEllipse(
+            self.thumb_pos, self.margin, self.height() - 2 * self.margin, self.height() - 2 * self.margin
+        )
 
         painter.setPen(Qt.GlobalColor.white)
         font = painter.font()
@@ -183,3 +190,54 @@ class RefreshDevicesButton(QPushButton):
 
     def set_refresh_mode(self, checked: bool | int):
         self.switch.setChecked(bool(checked))
+
+
+class DeviceListItemWidget(QWidget):
+    """设备列表项 widget：左侧设备名 + 右侧路由/录制状态指示。
+
+    透明背景以让 QListWidget 选中高亮透过；状态用 emoji + tooltip 呈现。
+    """
+
+    def __init__(self, serial: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 6, 2)
+        layout.setSpacing(6)
+
+        self.name_label = QLabel(serial)
+        self.name_label.setStyleSheet("background: transparent;")
+        layout.addWidget(self.name_label)
+        layout.addStretch()
+
+        self.audio_label = QLabel("")
+        self.audio_label.setFixedWidth(18)
+        self.audio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.audio_label.setStyleSheet("background: transparent;")
+        layout.addWidget(self.audio_label)
+
+        self.video_label = QLabel("")
+        self.video_label.setFixedWidth(18)
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet("background: transparent;")
+        layout.addWidget(self.video_label)
+
+        self.record_label = QLabel("")
+        self.record_label.setFixedWidth(18)
+        self.record_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.record_label.setStyleSheet("background: transparent;")
+        layout.addWidget(self.record_label)
+
+        self.update_status(False, False, False)
+
+    def update_status(self, audio: bool, video: bool, recording: bool) -> None:
+        self.audio_label.setText("🎵" if audio else "")
+        self.audio_label.setToolTip("音频路由中" if audio else "")
+        self.video_label.setText("🎥" if video else "")
+        self.video_label.setToolTip("视频路由中" if video else "")
+        self.record_label.setText("●" if recording else "")
+        self.record_label.setStyleSheet(
+            "background: transparent; color: #FF5555; font-weight: bold;" if recording else "background: transparent;"
+        )
+        self.record_label.setToolTip("录制中" if recording else "")

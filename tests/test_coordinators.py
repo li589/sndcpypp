@@ -4,7 +4,6 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -28,6 +27,7 @@ from app.domain.models.operation_requests import (
 )
 from app.infrastructure.adb.path_resolver import ResolvedADBPath
 from app.infrastructure.config.settings_store import JsonSettingsStore
+from app.ui.console_logger_coordinator import ConsoleLoggerCoordinator
 from app.ui.core_lifecycle_coordinator import (
     build_signal_pairs,
     connect_core_signals,
@@ -42,6 +42,7 @@ from app.ui.device_service_coordinator import (
     submit_kill_adb,
     submit_restart_adb,
 )
+from app.ui.dialogs import ExitAction
 from app.ui.file_transfer_coordinator import (
     collect_existing_names,
     handle_file_progress,
@@ -54,10 +55,6 @@ from app.ui.recording_session_coordinator import (
     RecordingSessionCoordinator,
     RecordingSessionState,
 )
-from app.ui.console_logger_coordinator import ConsoleLoggerCoordinator
-from app.ui.dialogs import ExitAction
-from app.ui.startup_coordinator import run_startup_routine
-from app.ui.teardown_coordinator import handle_close_event
 from app.ui.request_builders import (
     build_browse_files_request,
     build_console_command_request,
@@ -71,6 +68,8 @@ from app.ui.settings_coordinator import (
     load_settings_from_store,
     save_settings,
 )
+from app.ui.startup_coordinator import run_startup_routine
+from app.ui.teardown_coordinator import handle_close_event
 
 
 class _FakeSignal:
@@ -195,9 +194,7 @@ class RecordingSessionCoordinatorTests(unittest.TestCase):
         )
 
     def _make_event(self, state, device_serial, payload="D:/records/audio.wav"):
-        return RecordingStateEvent(
-            state=state, device_serial=device_serial, payload=payload
-        )
+        return RecordingStateEvent(state=state, device_serial=device_serial, payload=payload)
 
     def test_started_creates_session_and_starts_timers(self):
         event = self._make_event(RecordingState.STARTED, "device-1")
@@ -567,7 +564,7 @@ class SettingsCoordinatorTests(unittest.TestCase):
     def test_save_settings_logs_error_when_store_raises(self):
         class _FailingStore:
             def save(self, settings):
-                raise IOError("disk full")
+                raise OSError("disk full")
 
         window = _build_window_stub()
         settings: dict = {}

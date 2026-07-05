@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from app.ui.message_templates import validation_status_text
 
@@ -21,7 +21,7 @@ def apply_validation_result_ui(
     restore_validation_actions: Callable[[bool], None],
     on_first_ready: Callable[[], None] | None = None,
 ) -> ValidationUiResult:
-    adb_valid, player_valid, sndcpy_valid = [bool(value) for value in results]
+    adb_valid, player_valid, sndcpy_valid = (bool(value) for value in results)
     are_paths_ready = adb_valid and player_valid and sndcpy_valid
 
     set_status(validation_status_text(adb_valid, player_valid, sndcpy_valid))

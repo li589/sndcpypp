@@ -9,18 +9,35 @@ import os
 import sys
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
-    QMainWindow, QLabel, QLineEdit, QPushButton,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
     QTableWidgetItem,
 )
 
 from app.domain.models.file_info import FileInfo
 from app.domain.models.operation_requests import RecordingStateEvent
 from app.infrastructure.adb.path_resolver import ADBPathResolver
+from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.infrastructure.config.settings_store import JsonSettingsStore, get_default_settings_path
 from app.ui.console_actions import submit_console_command
 from app.ui.console_logger_coordinator import ConsoleLoggerCoordinator
+from app.ui.core_lifecycle_coordinator import (
+    connect_core_signals,
+    disconnect_core_signals,
+    recreate_core_controller,
+    resolve_and_prepare_paths,
+)
+from app.ui.core_lifecycle_coordinator import (
+    sync_core_runtime as coordinate_sync_core_runtime,
+)
+from app.ui.device_actions import (
+    submit_device_start_action,
+    submit_scoped_stop_action,
+)
 from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
 from app.ui.device_service_coordinator import (
@@ -29,17 +46,19 @@ from app.ui.device_service_coordinator import (
     submit_kill_adb,
     submit_restart_adb,
 )
-from app.ui.device_actions import (
-    submit_device_start_action,
-    submit_scoped_stop_action,
-)
 from app.ui.file_actions import submit_upload_requests
 from app.ui.file_page_controller import FilePageController
 from app.ui.file_transfer_coordinator import (
     collect_existing_names,
-    handle_file_progress as coordinate_file_progress,
-    handle_symlink_resolved as coordinate_symlink_resolved,
     should_refresh_file_view_after_transfer,
+)
+from app.ui.file_transfer_coordinator import (
+    handle_file_progress as coordinate_file_progress,
+)
+from app.ui.file_transfer_coordinator import (
+    handle_symlink_resolved as coordinate_symlink_resolved,
+)
+from app.ui.file_transfer_coordinator import (
     update_file_table as coordinate_update_file_table,
 )
 from app.ui.interaction_helpers import (
@@ -55,16 +74,8 @@ from app.ui.main_window_shell import (
     toggle_top_window,
     tray_icon_activated,
 )
-from app.ui.menu_coordinator import show_console_context_menu
 from app.ui.main_window_ui import build_main_window_ui, configure_main_window_shell
-from app.ui.request_builders import (
-    build_browse_files_request,
-    build_console_command_request,
-    build_pull_file_request,
-    build_push_file_request,
-    build_recording_request,
-    build_routing_request,
-)
+from app.ui.menu_coordinator import show_console_context_menu
 from app.ui.message_templates import (
     log_auto_validation_starting_adb,
     log_extra_params_updated,
@@ -78,21 +89,24 @@ from app.ui.message_templates import (
 from app.ui.popup_manager import PopupManager
 from app.ui.recording_actions import prepare_recording_start
 from app.ui.recording_session_coordinator import RecordingSessionCoordinator
+from app.ui.request_builders import (
+    build_browse_files_request,
+    build_console_command_request,
+    build_pull_file_request,
+    build_push_file_request,
+    build_recording_request,
+    build_routing_request,
+)
 from app.ui.settings_coordinator import (
     apply_cmd_extra_settings,
     apply_settings_to_ui,
     load_settings_from_store,
+)
+from app.ui.settings_coordinator import (
     save_settings as persist_settings,
 )
 from app.ui.startup_coordinator import run_startup_routine
 from app.ui.teardown_coordinator import handle_close_event
-from app.ui.core_lifecycle_coordinator import (
-    connect_core_signals,
-    disconnect_core_signals,
-    recreate_core_controller,
-    resolve_and_prepare_paths,
-    sync_core_runtime as coordinate_sync_core_runtime,
-)
 from core import CoreController
 
 
@@ -145,6 +159,11 @@ class SndcpyGUI(QMainWindow):
         self.scan_timer = QTimer(self)
         self.scan_timer.timeout.connect(self.auto_refresh_devices)
 
+        # 设备状态指示器刷新定时器：定期查询每台设备的音频/视频/录制运行状态。
+        self.status_indicator_timer = QTimer(self)
+        self.status_indicator_timer.setInterval(2000)
+        self.status_indicator_timer.timeout.connect(self._refresh_device_status)
+
         self.usb_debounce_timer = QTimer(self)
         self.usb_debounce_timer.setSingleShot(True)
         self.usb_debounce_timer.timeout.connect(self.manual_refresh_devices)
@@ -152,6 +171,7 @@ class SndcpyGUI(QMainWindow):
 
         try:
             from app.infrastructure.adb.UsbMonitor import CrossPlatformUSBMonitor
+
             self.usb_monitor = CrossPlatformUSBMonitor()
             self.usb_monitor.on_connect(lambda d: self.usb_event_signal.emit())
             self.usb_monitor.on_disconnect(lambda d: self.usb_event_signal.emit())
@@ -168,6 +188,7 @@ class SndcpyGUI(QMainWindow):
             tray_widget=self,
         )
         self.device_page_controller = self._create_device_page_controller()
+        self.status_indicator_timer.start()
 
         QTimer.singleShot(1000, self.startup_routine)
 
@@ -201,7 +222,7 @@ class SndcpyGUI(QMainWindow):
         self.status_label.setText(status_usb_refresh_pending())
 
     def startup_routine(self):
-        usb_monitor = getattr(self, 'usb_monitor', None)
+        usb_monitor = getattr(self, "usb_monitor", None)
         ok = run_startup_routine(
             log_to_console=self.log_to_console,
             validate_paths=self.validate_paths,
@@ -218,7 +239,7 @@ class SndcpyGUI(QMainWindow):
         else:
             self.scan_timer.stop()
 
-    def browse_file(self, target_edit: QLineEdit, file_filter: str="所有文件 (*.*)"):
+    def browse_file(self, target_edit: QLineEdit, file_filter: str = "所有文件 (*.*)"):
         file_path = self.popups.open_file("选择文件", target_edit.text().strip(), file_filter)
         if file_path:
             target_edit.setText(file_path)
@@ -331,7 +352,9 @@ class SndcpyGUI(QMainWindow):
             log_to_console=self.log_to_console,
             request_list_files=lambda device, remote_path: self.core_controller.request_list_device_files(
                 build_browse_files_request(device, remote_path)
-            ) if self.core_controller else None,
+            )
+            if self.core_controller
+            else None,
             request_pull=lambda device, remote_file, local_dir, rename_to: self.core_controller.request_pull_file(
                 build_pull_file_request(
                     device_serial=device,
@@ -339,7 +362,9 @@ class SndcpyGUI(QMainWindow):
                     local_dir=local_dir,
                     rename_to=rename_to,
                 )
-            ) if self.core_controller else None,
+            )
+            if self.core_controller
+            else None,
         )
 
     def _create_device_page_controller(self) -> DevicePageController:
@@ -403,6 +428,10 @@ class SndcpyGUI(QMainWindow):
     def update_device_list(self, devices: list[str]):
         self.device_page_controller.update_device_list(devices)
 
+    def _refresh_device_status(self):
+        """刷新设备列表中每台设备的路由/录制状态指示器。"""
+        self.device_page_controller.refresh_device_status_indicators()
+
     def get_selected_device(self, show_warning: bool = True):
         return self.device_page_controller.get_selected_device(show_warning)
 
@@ -424,9 +453,7 @@ class SndcpyGUI(QMainWindow):
         submit_install_sndcpy(
             device_serial=device,
             core_controller=self.core_controller,
-            cooldown=lambda: self._cooldown_buttons(
-                [self.install_btn], 1500, self._restore_validation_actions
-            ),
+            cooldown=lambda: self._cooldown_buttons([self.install_btn], 1500, self._restore_validation_actions),
             set_status=self.status_label.setText,
             show_busy_progress=self._show_busy_progress,
         )
@@ -451,9 +478,7 @@ class SndcpyGUI(QMainWindow):
         if device and self.core_controller:
             submit_device_start_action(
                 device,
-                before_submit=lambda: self._cooldown_buttons(
-                    [self.start_btn], 1200, self._restore_validation_actions
-                ),
+                before_submit=lambda: self._cooldown_buttons([self.start_btn], 1200, self._restore_validation_actions),
                 submit=lambda serial: self.core_controller.request_start_routing_session(
                     build_routing_request(
                         device_serial=serial,
@@ -471,6 +496,7 @@ class SndcpyGUI(QMainWindow):
                 status_text=status_routing_submitted(device),
                 after_submit=self._show_busy_progress,
             )
+            QTimer.singleShot(1500, self._refresh_device_status)
 
     @pyqtSlot()
     def start_audio_only(self):
@@ -479,10 +505,11 @@ class SndcpyGUI(QMainWindow):
             submit_device_start_action(
                 device,
                 before_submit=lambda: self._cooldown_buttons([self.start_audio_btn], 1000),
-                submit=lambda serial: self.core_controller.request_start_audio_route(serial, port=28200),
+                submit=lambda serial: self.core_controller.request_start_audio_route(serial, port=DEFAULT_AUDIO_PORT),
                 set_status=self.status_label.setText,
                 status_text=status_audio_route_submitted(device),
             )
+            QTimer.singleShot(1500, self._refresh_device_status)
 
     @pyqtSlot()
     def stop_audio_only(self):
@@ -496,6 +523,7 @@ class SndcpyGUI(QMainWindow):
                 device_template="独立音频停止指令已发送 ({device})",
                 all_devices_text="所有独立音频停止指令已发送",
             )
+            QTimer.singleShot(1000, self._refresh_device_status)
 
     def stop_routing(self):
         if self.core_controller:
@@ -509,6 +537,7 @@ class SndcpyGUI(QMainWindow):
                 all_devices_text="所有设备流媒体路由停止指令已发送",
                 after_submit=lambda: self.progress_bar.setVisible(False),
             )
+            QTimer.singleShot(1000, self._refresh_device_status)
 
     @pyqtSlot()
     def start_recording_ui(self):
@@ -545,6 +574,7 @@ class SndcpyGUI(QMainWindow):
             )
         )
         self.status_label.setText(status_recording_preparing(device))
+        QTimer.singleShot(1500, self._refresh_device_status)
 
     @pyqtSlot()
     def stop_recording_ui(self):
@@ -558,11 +588,13 @@ class SndcpyGUI(QMainWindow):
                 device_template="录制停止指令已发送 ({device})",
                 all_devices_text="录制停止指令已发送 (所有设备)",
             )
+            QTimer.singleShot(1000, self._refresh_device_status)
 
     @pyqtSlot(object)
     def handle_recording_state_change(self, event: RecordingStateEvent):
         if self._recording_coordinator:
             self._recording_coordinator.handle_state_change(event)
+        self._refresh_device_status()
 
     # ================ 文件传输 UI ================
     @pyqtSlot()
@@ -590,7 +622,9 @@ class SndcpyGUI(QMainWindow):
             ),
         )
 
-    def _should_refresh_file_view_after_transfer(self, device_serial: str, transfer_kind: str, remote_path: str) -> bool:
+    def _should_refresh_file_view_after_transfer(
+        self, device_serial: str, transfer_kind: str, remote_path: str
+    ) -> bool:
         return should_refresh_file_view_after_transfer(
             device_serial=device_serial,
             transfer_kind=transfer_kind,
@@ -600,7 +634,9 @@ class SndcpyGUI(QMainWindow):
         )
 
     @pyqtSlot(str, str, str, str, str, int)
-    def handle_file_progress(self, status: str, device_serial: str, transfer_kind: str, remote_path: str, msg: str, percent: int):
+    def handle_file_progress(
+        self, status: str, device_serial: str, transfer_kind: str, remote_path: str, msg: str, percent: int
+    ):
         coordinate_file_progress(
             status=status,
             device_serial=device_serial,
@@ -672,6 +708,7 @@ class SndcpyGUI(QMainWindow):
         if self.popups.confirm_restart_audio_route(device_serial):
             if self.core_controller:
                 self.core_controller.request_start_audio_route(device_serial)
+        self._refresh_device_status()
 
     def execute_custom_command(self):
         if self.core_controller is None:
@@ -686,7 +723,7 @@ class SndcpyGUI(QMainWindow):
             after_submit=self.cmd_input.clear,
         )
 
-    def log_to_console(self, message: str, msg_type: str="info"):
+    def log_to_console(self, message: str, msg_type: str = "info"):
         self._console_logger.emit(message, msg_type)
 
     @pyqtSlot(str)
@@ -705,6 +742,7 @@ class SndcpyGUI(QMainWindow):
             set_status=self.status_label.setText,
             show_install_result=self.popups.show_install_result,
         )
+        self._refresh_device_status()
 
     def load_json_settings(self) -> dict[str, Any]:
         settings, warning = load_settings_from_store(self.settings_store)
@@ -729,9 +767,9 @@ class SndcpyGUI(QMainWindow):
             confirm_exit=self.popups.confirm_exit_action,
             hide_to_tray=self.close_only_action,
             save_settings=self.save_settings,
-            usb_monitor=getattr(self, 'usb_monitor', None),
+            usb_monitor=getattr(self, "usb_monitor", None),
             core_controller=self.core_controller,
             log_to_console=self.log_to_console,
-            scan_timer=getattr(self, 'scan_timer', None),
-            tray_icon=getattr(self, 'tray_icon', None),
+            scan_timer=getattr(self, "scan_timer", None),
+            tray_icon=getattr(self, "tray_icon", None),
         )

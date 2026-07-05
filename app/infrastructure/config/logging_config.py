@@ -16,7 +16,7 @@ _DEFAULT_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file
-_BACKUP_COUNT = 3             # keep 3 rotated files
+_BACKUP_COUNT = 3  # keep 3 rotated files
 
 _configured = False
 

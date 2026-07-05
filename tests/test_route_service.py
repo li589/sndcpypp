@@ -216,7 +216,8 @@ class RouteServiceTests(unittest.TestCase):
             process_registry=registry,
             process_supervisor=ProcessSupervisor(registry),
             task_runner=task_runner or _ImmediateTaskRunner(),
-            run_adb_command=lambda cmd, desc: run_calls.append((cmd, desc)) or SimpleNamespace(
+            run_adb_command=lambda cmd, desc: run_calls.append((cmd, desc))
+            or SimpleNamespace(
                 returncode=0,
                 stdout="",
                 stderr="",
@@ -237,9 +238,12 @@ class RouteServiceTests(unittest.TestCase):
         operations: list[tuple[str, bool]] = []
         service.operation_completed.connect(lambda operation, success: operations.append((operation, success)))
 
-        with patch("app.services.route_service.subprocess.Popen", return_value=_ExitedProc()), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("app.services.route_service.subprocess.Popen", return_value=_ExitedProc()),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_audio_route("device-1", port=28200)
 
@@ -270,11 +274,13 @@ class RouteServiceTests(unittest.TestCase):
         service.operation_completed.connect(lambda operation, success: operations.append((operation, success)))
         service.log_message.connect(lambda message, level: logs.append((message, level)))
 
-        with patch.object(service, "_cleanup_audio_player_processes", return_value=[]), patch(
-            "app.services.route_service.subprocess.Popen"
-        ) as popen_mock, patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch.object(service, "_cleanup_audio_player_processes", return_value=[]),
+            patch("app.services.route_service.subprocess.Popen") as popen_mock,
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_audio_route("device-1", port=28200)
 
@@ -289,9 +295,12 @@ class RouteServiceTests(unittest.TestCase):
         operations: list[tuple[str, bool]] = []
         service.operation_completed.connect(lambda operation, success: operations.append((operation, success)))
 
-        with patch("app.services.route_service.subprocess.Popen", return_value=_ExitedProc()), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("app.services.route_service.subprocess.Popen", return_value=_ExitedProc()),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_video_route("device-1")
 
@@ -321,7 +330,8 @@ class RouteServiceTests(unittest.TestCase):
             process_registry=registry,
             process_supervisor=ProcessSupervisor(registry),
             task_runner=task_runner,
-            run_adb_command=lambda cmd, desc: run_calls.append((cmd, desc)) or SimpleNamespace(
+            run_adb_command=lambda cmd, desc: run_calls.append((cmd, desc))
+            or SimpleNamespace(
                 returncode=0,
                 stdout="",
                 stderr="",
@@ -348,28 +358,35 @@ class RouteServiceTests(unittest.TestCase):
                 return first_proc
             return second_proc
 
-        with patch("app.services.route_service.subprocess.Popen", side_effect=fake_popen), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch.object(
-            service,
-            "_build_video_attempt_plan",
-            return_value=[
-                {"bitrate": 8000, "max_size": "原始", "turn_screen_off": True, "reason": "requested"},
-                {"bitrate": 4000, "max_size": "1280", "turn_screen_off": False, "reason": "fallback"},
-            ],
-        ), patch.object(
-            service,
-            "_wait_until_process_ready",
-            side_effect=[False, True],
-        ), patch.object(
-            service,
-            "_should_retry_video_launch",
-            return_value=True,
-        ), patch.object(
-            service,
-            "_read_debug_file",
-            return_value="ERROR: Server connection failed",
+        with (
+            patch("app.services.route_service.subprocess.Popen", side_effect=fake_popen),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch.object(
+                service,
+                "_build_video_attempt_plan",
+                return_value=[
+                    {"bitrate": 8000, "max_size": "原始", "turn_screen_off": True, "reason": "requested"},
+                    {"bitrate": 4000, "max_size": "1280", "turn_screen_off": False, "reason": "fallback"},
+                ],
+            ),
+            patch.object(
+                service,
+                "_wait_until_process_ready",
+                side_effect=[False, True],
+            ),
+            patch.object(
+                service,
+                "_should_retry_video_launch",
+                return_value=True,
+            ),
+            patch.object(
+                service,
+                "_read_debug_file",
+                return_value="ERROR: Server connection failed",
+            ),
         ):
             service.start_video_route("device-1", bitrate=8000, max_size="原始")
 
@@ -399,9 +416,15 @@ class RouteServiceTests(unittest.TestCase):
             is_running=lambda: True,
         )
 
-        with patch("app.services.route_service.subprocess.Popen", side_effect=lambda cmd, creationflags=0: popen_calls.append(cmd) or _TransientRunningProc()), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                side_effect=lambda cmd, creationflags=0: popen_calls.append(cmd) or _TransientRunningProc(),
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_audio_route("device-1", port=28200)
 
@@ -429,9 +452,15 @@ class RouteServiceTests(unittest.TestCase):
             is_running=lambda: True,
         )
 
-        with patch("app.services.route_service.subprocess.Popen", side_effect=lambda cmd, creationflags=0: popen_calls.append(cmd) or _TransientRunningProc()), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                side_effect=lambda cmd, creationflags=0: popen_calls.append(cmd) or _TransientRunningProc(),
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_audio_route("device-1", port=28200)
 
@@ -462,10 +491,14 @@ class RouteServiceTests(unittest.TestCase):
             running_state["value"] = False
             return True
 
-        with patch("app.services.route_service.subprocess.Popen", return_value=proc), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch.object(service, "_wait_until_process_ready", side_effect=_mark_shutdown):
+        with (
+            patch("app.services.route_service.subprocess.Popen", return_value=proc),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch.object(service, "_wait_until_process_ready", side_effect=_mark_shutdown),
+        ):
             service.start_audio_route("device-1", port=28200)
 
         self.assertEqual(registry.ensure("device-1")["audio"], [])
@@ -515,9 +548,12 @@ class RouteServiceTests(unittest.TestCase):
         service.log_message.connect(lambda message, level: logs.append((message, level)))
         proc = _ManagedProc()
 
-        with patch("app.services.route_service.subprocess.Popen", return_value=proc), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("app.services.route_service.subprocess.Popen", return_value=proc),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_video_route("device-1")
 
@@ -532,9 +568,10 @@ class RouteServiceTests(unittest.TestCase):
         # 使用 _ExitedProc(0) 模拟已正常退出的进程，避免 _wait_for_process_exit 无限轮询
         proc = _ExitedProc(0)
 
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file, tempfile.NamedTemporaryFile(
-            "w", delete=False, encoding="utf-8"
-        ) as stderr_file:
+        with (
+            tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file,
+            tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stderr_file,
+        ):
             stdout_file.write("Renderer: direct3d11")
             stderr_file.write("")
             proc._debug_stdout_log_path = stdout_file.name
@@ -565,9 +602,10 @@ class RouteServiceTests(unittest.TestCase):
         )
         service.log_message.connect(lambda message, level: logs.append((message, level)))
 
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file, tempfile.NamedTemporaryFile(
-            "w", delete=False, encoding="utf-8"
-        ) as stderr_file:
+        with (
+            tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file,
+            tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stderr_file,
+        ):
             stdout_file.write("Renderer: direct3d11")
             stderr_file.write("")
             proc = _WaitForbiddenLogBackedProc(stdout_file.name, stderr_file.name)
@@ -603,9 +641,12 @@ class RouteServiceTests(unittest.TestCase):
         service.log_message.connect(lambda message, level: logs.append((message, level)))
         service.operation_completed.connect(lambda operation, success: operations.append((operation, success)))
 
-        with patch("app.services.route_service.subprocess.Popen", return_value=_ManagedProc()), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("app.services.route_service.subprocess.Popen", return_value=_ManagedProc()),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_video_route("device-1")
 
@@ -634,13 +675,18 @@ class RouteServiceTests(unittest.TestCase):
             popen_kwargs.append(kwargs)
             return _ManagedProc()
 
-        with patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]), patch(
-            "app.services.route_service.subprocess.Popen",
-            side_effect=_capture_popen,
-        ), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch("app.services.route_service.os.path.isfile", return_value=True):
+        with (
+            patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]),
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                side_effect=_capture_popen,
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch("app.services.route_service.os.path.isfile", return_value=True),
+        ):
             service.start_video_route("device-1")
 
         self.assertEqual(popen_kwargs[0]["cwd"], r"D:\tools\scrcpy")
@@ -667,13 +713,18 @@ class RouteServiceTests(unittest.TestCase):
             popen_kwargs.append(kwargs)
             return _ManagedProc()
 
-        with patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]), patch(
-            "app.services.route_service.subprocess.Popen",
-            side_effect=_capture_popen,
-        ), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch("app.services.route_service.os.path.isfile", return_value=True):
+        with (
+            patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]),
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                side_effect=_capture_popen,
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch("app.services.route_service.os.path.isfile", return_value=True),
+        ):
             service.start_video_route("device-1")
 
         self.assertEqual(popen_kwargs[0]["env"]["ADB"], r"D:\tools\adb\adb.exe")
@@ -696,13 +747,20 @@ class RouteServiceTests(unittest.TestCase):
         )
         cleaned: list[str] = []
 
-        with patch.object(service, "_cleanup_stale_scrcpy_processes", side_effect=lambda path: cleaned.append(path) or [1234]), patch(
-            "app.services.route_service.subprocess.Popen",
-            return_value=_ManagedProc(),
-        ), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch("app.services.route_service.os.path.isfile", return_value=True):
+        with (
+            patch.object(
+                service, "_cleanup_stale_scrcpy_processes", side_effect=lambda path: cleaned.append(path) or [1234]
+            ),
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                return_value=_ManagedProc(),
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch("app.services.route_service.os.path.isfile", return_value=True),
+        ):
             service.start_video_route("device-1")
 
         self.assertEqual(cleaned, [r"D:\tools\scrcpy\scrcpy.exe"])
@@ -738,13 +796,18 @@ class RouteServiceTests(unittest.TestCase):
             popen_calls.append(cmd)
             return _ManagedProc()
 
-        with patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]), patch(
-            "app.services.route_service.subprocess.Popen",
-            side_effect=_capture_popen,
-        ), patch(
-            "app.services.route_service.time.sleep",
-            lambda _: None,
-        ), patch("app.services.route_service.os.path.isfile", return_value=True):
+        with (
+            patch.object(service, "_cleanup_stale_scrcpy_processes", return_value=[]),
+            patch(
+                "app.services.route_service.subprocess.Popen",
+                side_effect=_capture_popen,
+            ),
+            patch(
+                "app.services.route_service.time.sleep",
+                lambda _: None,
+            ),
+            patch("app.services.route_service.os.path.isfile", return_value=True),
+        ):
             service.start_video_route("device-1")
 
         self.assertEqual(run_calls[0][0], ["adb", "start-server"])
@@ -769,20 +832,24 @@ class RouteServiceTests(unittest.TestCase):
         )
         call_order: list[str] = []
 
-        with patch.object(
-            service,
-            "_start_video_route_task",
-            side_effect=lambda *args, **kwargs: call_order.append("video")
-            or registry.register("device-1", "video", _LogBackedProc())
-            or True,
-        ), patch.object(
-            service,
-            "_wait_for_video_renderer",
-            side_effect=lambda proc, device_serial: call_order.append(f"wait:{device_serial}") or True,
-        ), patch.object(
-            service,
-            "_start_audio_route_task",
-            side_effect=lambda *args, **kwargs: call_order.append("audio") or True,
+        with (
+            patch.object(
+                service,
+                "_start_video_route_task",
+                side_effect=lambda *args, **kwargs: call_order.append("video")
+                or registry.register("device-1", "video", _LogBackedProc())
+                or True,
+            ),
+            patch.object(
+                service,
+                "_wait_for_video_renderer",
+                side_effect=lambda proc, device_serial: call_order.append(f"wait:{device_serial}") or True,
+            ),
+            patch.object(
+                service,
+                "_start_audio_route_task",
+                side_effect=lambda *args, **kwargs: call_order.append("audio") or True,
+            ),
         ):
             service.start_routing_session(
                 RoutingRequest(
@@ -816,18 +883,22 @@ class RouteServiceTests(unittest.TestCase):
         logs: list[tuple[str, str]] = []
         service.log_message.connect(lambda message, level: logs.append((message, level)))
 
-        with patch.object(
-            service,
-            "_start_video_route_task",
-            side_effect=lambda *args, **kwargs: registry.register("device-1", "video", _LogBackedProc()) or True,
-        ), patch.object(
-            service,
-            "_wait_for_video_renderer",
-            return_value=False,
-        ), patch.object(
-            service,
-            "_start_audio_route_task",
-        ) as audio_mock:
+        with (
+            patch.object(
+                service,
+                "_start_video_route_task",
+                side_effect=lambda *args, **kwargs: registry.register("device-1", "video", _LogBackedProc()) or True,
+            ),
+            patch.object(
+                service,
+                "_wait_for_video_renderer",
+                return_value=False,
+            ),
+            patch.object(
+                service,
+                "_start_audio_route_task",
+            ) as audio_mock,
+        ):
             service.start_routing_session(
                 RoutingRequest(
                     device_serial="device-1",

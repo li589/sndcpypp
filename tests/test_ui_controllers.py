@@ -17,10 +17,10 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from app.infrastructure.adb.path_resolver import ADBPathResolver, get_platform_vendor_subdir, resolve_vendor_tool_path
 from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
 from app.ui.device_service_coordinator import finalize_operation_ui, submit_adb_service_action
-from app.infrastructure.adb.path_resolver import ADBPathResolver, get_platform_vendor_subdir, resolve_vendor_tool_path
 from app.ui.file_page_controller import FilePageController
 from app.ui.popup_manager import PopupManager
 from app.ui.runtime_settings import (
@@ -251,9 +251,12 @@ class RuntimeSettingsTests(unittest.TestCase):
                 resolver_calls.append((adb_path, sndcpy_dir))
                 return SimpleNamespace(path="resolved-adb")
 
-        with patch("app.ui.runtime_settings.shutil.which", return_value="C:/VLC/vlc.exe"), patch(
-            "app.ui.runtime_settings.os.path.isfile",
-            side_effect=lambda path: path == "C:/VLC/vlc.exe",
+        with (
+            patch("app.ui.runtime_settings.shutil.which", return_value="C:/VLC/vlc.exe"),
+            patch(
+                "app.ui.runtime_settings.os.path.isfile",
+                side_effect=lambda path: path == "C:/VLC/vlc.exe",
+            ),
         ):
             resolution, player_path, sndcpy_dir = resolve_runtime_paths(
                 "",
@@ -279,9 +282,12 @@ class RuntimeSettingsTests(unittest.TestCase):
 
         audio_router_path = get_audio_router_candidate_paths("D:/App")[2]
 
-        with patch("app.ui.runtime_settings.shutil.which", return_value=None), patch(
-            "app.ui.runtime_settings.os.path.isfile",
-            side_effect=lambda path: os.path.abspath(path) == audio_router_path,
+        with (
+            patch("app.ui.runtime_settings.shutil.which", return_value=None),
+            patch(
+                "app.ui.runtime_settings.os.path.isfile",
+                side_effect=lambda path: os.path.abspath(path) == audio_router_path,
+            ),
         ):
             resolution, player_path, sndcpy_dir = resolve_runtime_paths(
                 "",
@@ -300,7 +306,6 @@ class RuntimeSettingsTests(unittest.TestCase):
             get_audio_router_recommended_args(),
             "-Idummy --demux rawaud --network-caching=200 --play-and-exit",
         )
-
 
     def test_collect_and_apply_ui_settings_round_trip(self):
         window = self._build_window_stub()
@@ -387,7 +392,10 @@ class ADBPathResolverTests(unittest.TestCase):
         ext = ".exe" if os.name == "nt" else ""
         path = os.path.join("D:/App", "vendor", get_platform_vendor_subdir(), "platform-tools", f"adb{ext}")
 
-        with patch("app.infrastructure.adb.path_resolver.os.path.isfile", side_effect=lambda candidate: os.path.normcase(candidate) == os.path.normcase(path)):
+        with patch(
+            "app.infrastructure.adb.path_resolver.os.path.isfile",
+            side_effect=lambda candidate: os.path.normcase(candidate) == os.path.normcase(path),
+        ):
             resolved = resolve_vendor_tool_path(os.path.join("D:/App", "vendor", get_platform_vendor_subdir()), "adb")
 
         self.assertEqual(resolved, os.path.abspath(path))

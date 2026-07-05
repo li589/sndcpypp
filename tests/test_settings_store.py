@@ -48,10 +48,13 @@ class JsonSettingsStoreTests(unittest.TestCase):
             self.assertTrue(os.path.exists(settings_path))
 
     def test_get_default_settings_path_prefers_user_profile_directory(self):
-        with patch("app.infrastructure.config.settings_store.os.name", "nt"), patch.dict(
-            "app.infrastructure.config.settings_store.os.environ",
-            {"APPDATA": "C:/Users/test/AppData/Roaming"},
-            clear=False,
+        with (
+            patch("app.infrastructure.config.settings_store.os.name", "nt"),
+            patch.dict(
+                "app.infrastructure.config.settings_store.os.environ",
+                {"APPDATA": "C:/Users/test/AppData/Roaming"},
+                clear=False,
+            ),
         ):
             settings_path = get_default_settings_path()
 

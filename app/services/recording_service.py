@@ -2,10 +2,12 @@ import os
 import shlex
 import subprocess
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, pyqtSignal
+
 from app.domain.models.operation_requests import RecordingState, RecordingStateEvent
+from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.infrastructure.config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -173,7 +175,7 @@ class RecordingService(QObject):
                             )
                         if audio_was_running and self._is_running() and not was_intentionally_stopped:
                             self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
-                            self._start_audio_route(device_serial, port=28200)
+                            self._start_audio_route(device_serial, port=DEFAULT_AUDIO_PORT)
 
                     self._task_runner.start(
                         name="record-monitor-and-restore",
@@ -184,13 +186,13 @@ class RecordingService(QObject):
                     self.recording_state_changed.emit(
                         RecordingStateEvent(RecordingState.FAILED, device_serial, str(exc))
                     )
-                    self.log_message.emit(f"录制启动失败: {str(exc)}", "error")
+                    self.log_message.emit(f"录制启动失败: {exc!s}", "error")
                     if audio_was_running and self._is_running():
-                        self._start_audio_route(device_serial, port=28200)
+                        self._start_audio_route(device_serial, port=DEFAULT_AUDIO_PORT)
 
         self._task_runner.start(name="record-start", group="recording", target=_rec)
 
-    def stop_recording(self, device_serial: Optional[str] = None) -> None:
+    def stop_recording(self, device_serial: str | None = None) -> None:
         def _stop_rec_thread():
             if device_serial is None:
                 for ds in list(self._process_registry.keys()):
@@ -204,3 +206,9 @@ class RecordingService(QObject):
             self.log_message.emit("录制已结束保存 (等待后台封包完成)", "success")
 
         self._task_runner.start(name="record-stop", group="recording", target=_stop_rec_thread)
+
+    def is_recording_running(self, device_serial: str) -> bool:
+        reg = self._process_registry.ensure(device_serial)
+        with reg["lock"]:
+            record_procs = list(reg.get("record", []))
+        return any(proc.poll() is None for proc in record_procs)

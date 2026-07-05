@@ -7,6 +7,7 @@ from app.domain.models.operation_requests import (
     RecordingRequest,
     RoutingRequest,
 )
+from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.ui.interaction_helpers import ensure_trailing_slash
 from app.ui.pages.console_page import CONSOLE_TARGET_NO_DEVICE, CONSOLE_TARGET_SCRCPY
 
@@ -22,7 +23,7 @@ def build_routing_request(
     show_fps: bool,
     stay_awake: bool,
     turn_screen_off: bool,
-    audio_port: int = 28200,
+    audio_port: int = DEFAULT_AUDIO_PORT,
 ) -> RoutingRequest:
     return RoutingRequest(
         device_serial=device_serial,

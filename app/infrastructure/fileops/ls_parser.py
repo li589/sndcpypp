@@ -1,12 +1,11 @@
 import re
-from typing import Optional
 
 from app.domain.enums.file_type import FileType
 from app.domain.models.file_info import FileInfo
 
 
 class LSAllParser:
-    def parse_line(self, line: str) -> Optional[FileInfo]:
+    def parse_line(self, line: str) -> FileInfo | None:
         line = line.strip()
         if not line or line.startswith("total"):
             return None

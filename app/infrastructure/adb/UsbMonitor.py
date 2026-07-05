@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 USB设备实时监控程序
 支持: Linux (pyudev), Windows (pywin32/wmi), macOS (pyobjc)
@@ -7,34 +6,37 @@ USB设备实时监控程序
 """
 
 import sys
-import time
 import threading
-from datetime import datetime
+import time
 from abc import ABC, abstractmethod
-from typing import Callable, Optional, Dict, List
+from collections.abc import Callable
+from datetime import datetime
 
 # 尝试导入平台特定的库
 PLATFORM = sys.platform
 
-if PLATFORM.startswith('linux'):
+if PLATFORM.startswith("linux"):
     try:
         import pyudev
+
         LINUX_AVAILABLE = True
     except ImportError:
         LINUX_AVAILABLE = False
-elif PLATFORM == 'win32':
+elif PLATFORM == "win32":
     try:
-        import win32api
-        import win32con
-        import win32gui
+        import win32api  # noqa: F401
+        import win32con  # noqa: F401
+        import win32gui  # noqa: F401
         import wmi
+
         WINDOWS_AVAILABLE = True
     except ImportError:
         WINDOWS_AVAILABLE = False
-elif PLATFORM == 'darwin':
+elif PLATFORM == "darwin":
     try:
-        from Foundation import NSNotificationCenter, NSRunLoop
-        from PyObjCTools import AppHelper
+        from Foundation import NSNotificationCenter, NSRunLoop  # noqa: F401
+        from PyObjCTools import AppHelper  # noqa: F401
+
         MACOS_AVAILABLE = True
     except ImportError:
         MACOS_AVAILABLE = False
@@ -43,12 +45,16 @@ elif PLATFORM == 'darwin':
 class USBDevice:
     """USB设备信息类"""
 
-    def __init__(self, device_id: str, vendor_id: Optional[str] = None,
-                 product_id: Optional[str] = None,
-                 manufacturer: Optional[str] = None,
-                 product: Optional[str] = None,
-                 serial: Optional[str] = None,
-                 device_type: Optional[str] = None):
+    def __init__(
+        self,
+        device_id: str,
+        vendor_id: str | None = None,
+        product_id: str | None = None,
+        manufacturer: str | None = None,
+        product: str | None = None,
+        serial: str | None = None,
+        device_type: str | None = None,
+    ):
         self.device_id = device_id
         self.vendor_id = vendor_id
         self.product_id = product_id
@@ -58,7 +64,7 @@ class USBDevice:
         self.device_type = device_type or "USB"
         self.timestamp = datetime.now()
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "device_id": self.device_id,
             "vendor_id": self.vendor_id,
@@ -67,7 +73,7 @@ class USBDevice:
             "product": self.product,
             "serial": self.serial,
             "device_type": self.device_type,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
         }
 
     def __str__(self) -> str:
@@ -78,14 +84,10 @@ class USBMonitorBase(ABC):
     """USB监控基类"""
 
     def __init__(self):
-        self.callbacks: Dict[str, List[Callable]] = {
-            'add': [],
-            'remove': [],
-            'change': []
-        }
+        self.callbacks: dict[str, list[Callable]] = {"add": [], "remove": [], "change": []}
         self.running = False
-        self.monitor_thread: Optional[threading.Thread] = None
-        self.watchdog_thread: Optional[threading.Thread] = None
+        self.monitor_thread: threading.Thread | None = None
+        self.watchdog_thread: threading.Thread | None = None
 
         # 用于跟踪状态改变
         self._changed_flag = False
@@ -96,15 +98,15 @@ class USBMonitorBase(ABC):
         self._stop_event = threading.Event()
 
     def on_connect(self, callback: Callable[[USBDevice], None]):
-        self.callbacks['add'].append(callback)
+        self.callbacks["add"].append(callback)
         return self
 
     def on_disconnect(self, callback: Callable[[USBDevice], None]):
-        self.callbacks['remove'].append(callback)
+        self.callbacks["remove"].append(callback)
         return self
 
     def on_change(self, callback: Callable[[USBDevice, str], None]):
-        self.callbacks['change'].append(callback)
+        self.callbacks["change"].append(callback)
         return self
 
     def _trigger(self, event_type: str, device: USBDevice, *args):
@@ -113,7 +115,7 @@ class USBMonitorBase(ABC):
 
         for callback in self.callbacks.get(event_type, []):
             try:
-                if event_type == 'change':
+                if event_type == "change":
                     callback(device, args[0] if args else "unknown")
                 else:
                     callback(device)
@@ -127,7 +129,7 @@ class USBMonitorBase(ABC):
             self._changed_flag = False
             return flag
 
-    def _start_thread(self, attr_name: str, target: Callable[[], None], name: str) -> Optional[threading.Thread]:
+    def _start_thread(self, attr_name: str, target: Callable[[], None], name: str) -> threading.Thread | None:
         with self._thread_lock:
             thread = getattr(self, attr_name, None)
             if thread is not None and thread.is_alive():
@@ -137,7 +139,7 @@ class USBMonitorBase(ABC):
             thread.start()
             return thread
 
-    def _join_thread(self, thread: Optional[threading.Thread], timeout: float) -> None:
+    def _join_thread(self, thread: threading.Thread | None, timeout: float) -> None:
         if thread is None:
             return
         if thread is threading.current_thread():
@@ -154,7 +156,7 @@ class USBMonitorBase(ABC):
         pass
 
     @abstractmethod
-    def get_current_devices(self) -> List[USBDevice]:
+    def get_current_devices(self) -> list[USBDevice]:
         pass
 
 
@@ -170,20 +172,20 @@ class LinuxUSBMonitor(USBMonitorBase):
 
     def _create_monitor(self):
         monitor = pyudev.Monitor.from_netlink(self.context)
-        monitor.filter_by(subsystem='usb')
+        monitor.filter_by(subsystem="usb")
         return monitor
 
-    def _parse_device(self, device) -> Optional[USBDevice]:
-        if device.device_type != 'usb_device':
+    def _parse_device(self, device) -> USBDevice | None:
+        if device.device_type != "usb_device":
             return None
         return USBDevice(
             device_id=device.device_path,
-            vendor_id=device.get('ID_VENDOR_ID', '0000'),
-            product_id=device.get('ID_MODEL_ID', '0000'),
-            manufacturer=device.get('ID_VENDOR', 'Unknown'),
-            product=device.get('ID_MODEL', 'Unknown'),
-            serial=device.get('ID_SERIAL_SHORT'),
-            device_type='USB'
+            vendor_id=device.get("ID_VENDOR_ID", "0000"),
+            product_id=device.get("ID_MODEL_ID", "0000"),
+            manufacturer=device.get("ID_VENDOR", "Unknown"),
+            product=device.get("ID_MODEL", "Unknown"),
+            serial=device.get("ID_SERIAL_SHORT"),
+            device_type="USB",
         )
 
     def _monitor_loop(self):
@@ -200,12 +202,12 @@ class LinuxUSBMonitor(USBMonitorBase):
                     continue
 
                 action = getattr(device, "action", "change")
-                if action == 'add':
-                    self._trigger('add', usb_device)
-                elif action == 'remove':
-                    self._trigger('remove', usb_device)
-                elif action == 'change':
-                    self._trigger('change', usb_device, action)
+                if action == "add":
+                    self._trigger("add", usb_device)
+                elif action == "remove":
+                    self._trigger("remove", usb_device)
+                elif action == "change":
+                    self._trigger("change", usb_device, action)
         finally:
             self.monitor = None
 
@@ -222,9 +224,9 @@ class LinuxUSBMonitor(USBMonitorBase):
         self._stop_event.set()
         self._join_thread(self.monitor_thread, timeout=2)
 
-    def get_current_devices(self) -> List[USBDevice]:
+    def get_current_devices(self) -> list[USBDevice]:
         devices = []
-        for device in self.context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
+        for device in self.context.list_devices(subsystem="usb", DEVTYPE="usb_device"):
             usb_dev = self._parse_device(device)
             if usb_dev:
                 devices.append(usb_dev)
@@ -259,12 +261,12 @@ class WindowsUSBMonitor(USBMonitorBase):
             device_id=device.DeviceID,
             vendor_id=vid,
             product_id=pid,
-            manufacturer=getattr(device, 'Manufacturer', 'Unknown'),
-            product=getattr(device, 'Name', 'Unknown Device'),
-            device_type='USB'
+            manufacturer=getattr(device, "Manufacturer", "Unknown"),
+            product=getattr(device, "Name", "Unknown Device"),
+            device_type="USB",
         )
 
-    def _get_usb_devices(self, wmi_client) -> Dict[str, USBDevice]:
+    def _get_usb_devices(self, wmi_client) -> dict[str, USBDevice]:
         devices = {}
         try:
             query = "SELECT DeviceID, Name, Manufacturer FROM Win32_PnPEntity WHERE PNPClass = 'USB'"
@@ -279,6 +281,7 @@ class WindowsUSBMonitor(USBMonitorBase):
 
     def _monitor_loop(self):
         import pythoncom
+
         pythoncom.CoInitialize()
         wmi_client = None
         try:
@@ -293,12 +296,12 @@ class WindowsUSBMonitor(USBMonitorBase):
                     added = current_ids - self.known_devices
                     for dev_id in added:
                         device = current_devices[dev_id]
-                        self._trigger('add', device)
+                        self._trigger("add", device)
 
                     removed = self.known_devices - current_ids
                     for dev_id in removed:
                         placeholder = USBDevice(device_id=dev_id)
-                        self._trigger('remove', placeholder)
+                        self._trigger("remove", placeholder)
 
                     self.known_devices = current_ids
                     if self._stop_event.wait(self.poll_interval):
@@ -338,11 +341,12 @@ class WindowsUSBMonitor(USBMonitorBase):
         self._join_thread(self.monitor_thread, timeout=2)
         self._join_thread(self.watchdog_thread, timeout=2)
 
-    def get_current_devices(self) -> List[USBDevice]:
+    def get_current_devices(self) -> list[USBDevice]:
         import pythoncom
+
         pythoncom.CoInitialize()
         wmi_client = None
-        devices_dict: Dict[str, USBDevice] | None = None
+        devices_dict: dict[str, USBDevice] | None = None
         try:
             wmi_client = wmi.WMI()
             devices_dict = self._get_usb_devices(wmi_client)
@@ -361,9 +365,10 @@ class GenericUSBMonitor(USBMonitorBase):
         try:
             import usb.core
             import usb.util
+
             self.usb = usb.core
         except ImportError:
-            raise ImportError("请先安装pyusb: pip install pyusb")
+            raise ImportError("请先安装pyusb: pip install pyusb") from None
 
         self.known_devices: set = set()
         self.poll_interval = 1.0
@@ -396,7 +401,7 @@ class GenericUSBMonitor(USBMonitorBase):
         except Exception:
             return str(value)
 
-    def _read_descriptor(self, device, attr_name: str) -> Optional[str]:
+    def _read_descriptor(self, device, attr_name: str) -> str | None:
         try:
             value = getattr(device, attr_name, None)
             return str(value) if value else None
@@ -418,11 +423,11 @@ class GenericUSBMonitor(USBMonitorBase):
 
             added = current_ids - self.known_devices
             for dev_id in added:
-                self._trigger('add', current_devices[dev_id])
+                self._trigger("add", current_devices[dev_id])
 
             removed = self.known_devices - current_ids
             for dev_id in removed:
-                self._trigger('remove', USBDevice(device_id=dev_id))
+                self._trigger("remove", USBDevice(device_id=dev_id))
 
             self.known_devices = current_ids
 
@@ -449,12 +454,12 @@ class CrossPlatformUSBMonitor:
     """
 
     def __init__(self):
-        self._monitor: Optional[USBMonitorBase] = None
+        self._monitor: USBMonitorBase | None = None
         self.running = False
 
-        if PLATFORM.startswith('linux') and LINUX_AVAILABLE:
+        if PLATFORM.startswith("linux") and LINUX_AVAILABLE:
             self._monitor = LinuxUSBMonitor()
-        elif PLATFORM == 'win32' and WINDOWS_AVAILABLE:
+        elif PLATFORM == "win32" and WINDOWS_AVAILABLE:
             self._monitor = WindowsUSBMonitor()
         else:
             self._monitor = GenericUSBMonitor()
@@ -472,7 +477,7 @@ class CrossPlatformUSBMonitor:
         if self._monitor:
             self._monitor.stop()
 
-    def get_usb_devices(self) -> List[USBDevice]:
+    def get_usb_devices(self) -> list[USBDevice]:
         """2. 获取当前所有连接的 USB 设备列表"""
         if self._monitor:
             return self._monitor.get_current_devices()
@@ -534,7 +539,7 @@ def main():
     except Exception as e:
         print(f"程序异常: {e}")
     finally:
-        if 'usb_api' in locals():
+        if "usb_api" in locals():
             usb_api.stop_monitoring()
         print("已退出")
 

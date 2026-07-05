@@ -1,12 +1,15 @@
+import contextlib
 import os
 import shlex
 import subprocess
 import tempfile
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, pyqtSignal
+
 from app.domain.models.operation_requests import RoutingRequest
+from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.infrastructure.config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -39,7 +42,7 @@ class RouteService(QObject):
         process_registry,
         process_supervisor,
         task_runner,
-        run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
+        run_adb_command: Callable[[list[str], str], subprocess.CompletedProcess | None],
         probe_scrcpy_features: Callable[[], dict],
         is_running: Callable[[], bool],
     ) -> None:
@@ -143,14 +146,10 @@ class RouteService(QObject):
             log_path = getattr(proc, attr_name, None)
             if not log_path:
                 continue
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(log_path)
-            except OSError:
-                pass
-            try:
+            with contextlib.suppress(AttributeError):
                 delattr(proc, attr_name)
-            except AttributeError:
-                pass
 
     @staticmethod
     def _default_audio_player_args() -> list[str]:
@@ -165,7 +164,7 @@ class RouteService(QObject):
         return [player_path, *player_args, f"tcp://localhost:{port}"]
 
     @staticmethod
-    def _result_text(result: Optional[subprocess.CompletedProcess]) -> str:
+    def _result_text(result: subprocess.CompletedProcess | None) -> str:
         if result is None:
             return ""
         stdout = (result.stdout or "").strip()
@@ -174,7 +173,7 @@ class RouteService(QObject):
 
     def _require_adb_success(
         self,
-        result: Optional[subprocess.CompletedProcess],
+        result: subprocess.CompletedProcess | None,
         *,
         action_text: str,
         operation: str,
@@ -246,11 +245,7 @@ class RouteService(QObject):
         else:
             fallback_max_size = max_size
         fallback_turn_screen_off = False
-        if (
-            fallback_bitrate != bitrate
-            or fallback_max_size != max_size
-            or fallback_turn_screen_off != turn_screen_off
-        ):
+        if fallback_bitrate != bitrate or fallback_max_size != max_size or fallback_turn_screen_off != turn_screen_off:
             attempts.append(
                 {
                     "bitrate": fallback_bitrate,
@@ -345,7 +340,7 @@ class RouteService(QObject):
         try:
             reg = self._process_registry.ensure(device_serial)
             with reg["lock"]:
-                port = str(reg.get("audio_port") or 28200)
+                port = str(reg.get("audio_port") or DEFAULT_AUDIO_PORT)
             self._process_supervisor.kill_group(device_serial, "audio")
             fallback_audio_pids = self._cleanup_audio_player_processes(port)
             if fallback_audio_pids:
@@ -365,7 +360,7 @@ class RouteService(QObject):
                 reg["audio_port"] = None
         except Exception as exc:
             logger.error("清理音频进程失败: %s", exc, exc_info=True)
-            self.log_message.emit(f"清理音频进程失败: {str(exc)}", "error")
+            self.log_message.emit(f"清理音频进程失败: {exc!s}", "error")
 
     def stop_audio_sync(self, device_serial: str) -> None:
         self._stop_audio_internal(device_serial)
@@ -378,7 +373,7 @@ class RouteService(QObject):
             args=(device_serial,),
         )
 
-    def _start_audio_route_task(self, device_serial: str, port: int = 28200) -> bool:
+    def _start_audio_route_task(self, device_serial: str, port: int = DEFAULT_AUDIO_PORT) -> bool:
         try:
             # #region debug-point E:route-start
             _report_debug_event(
@@ -401,7 +396,9 @@ class RouteService(QObject):
                 self._cmd_manager.get_target_cmd("start_audio_forward_cmd", device_serial=device_serial, port=port),
                 "音频端口转发",
             )
-            if not self._require_adb_success(forward_result, action_text=f"音频端口转发 ({device_serial})", operation="audio_route"):
+            if not self._require_adb_success(
+                forward_result, action_text=f"音频端口转发 ({device_serial})", operation="audio_route"
+            ):
                 with reg["lock"]:
                     reg["audio_port"] = None
                 return False
@@ -410,7 +407,9 @@ class RouteService(QObject):
                 self._cmd_manager.get_target_cmd("start_audio_start_cmd", device_serial=device_serial),
                 "唤醒 sndcpy App",
             )
-            if not self._require_adb_success(start_result, action_text=f"唤醒 sndcpy App ({device_serial})", operation="audio_route"):
+            if not self._require_adb_success(
+                start_result, action_text=f"唤醒 sndcpy App ({device_serial})", operation="audio_route"
+            ):
                 self._stop_audio_internal(device_serial)
                 return False
 
@@ -441,7 +440,9 @@ class RouteService(QObject):
                 return False
 
             backend_label = "AudioRouter" if _is_audio_router(player_cmd[0]) else "VLC"
-            self.log_message.emit(f"音频播放器已启动 [{backend_label}] (PID: {proc.pid}, 设备: {device_serial})", "success")
+            self.log_message.emit(
+                f"音频播放器已启动 [{backend_label}] (PID: {proc.pid}, 设备: {device_serial})", "success"
+            )
             self.operation_completed.emit("audio_route", True)
 
             return_code = self._wait_for_process_exit(
@@ -460,11 +461,11 @@ class RouteService(QObject):
             return True
         except Exception as exc:
             logger.error("音频路由启动失败: %s", exc, exc_info=True)
-            self.log_message.emit(f"音频路由启动失败: {str(exc)}", "error")
+            self.log_message.emit(f"音频路由启动失败: {exc!s}", "error")
             self.operation_completed.emit("audio_route", False)
             return False
 
-    def start_audio_route(self, device_serial: str, port: int = 28200) -> None:
+    def start_audio_route(self, device_serial: str, port: int = DEFAULT_AUDIO_PORT) -> None:
         self._task_runner.start(
             name="route-start-audio",
             group="route",
@@ -609,8 +610,8 @@ class RouteService(QObject):
                 finally:
                     stdout_log.close()
                     stderr_log.close()
-                setattr(proc, "_debug_stdout_log_path", stdout_log_path)
-                setattr(proc, "_debug_stderr_log_path", stderr_log_path)
+                proc._debug_stdout_log_path = stdout_log_path
+                proc._debug_stderr_log_path = stderr_log_path
                 self._process_registry.register(device_serial, "video", proc)
                 _report_video_debug_event(
                     "B",
@@ -650,7 +651,9 @@ class RouteService(QObject):
                     )
                     self._process_supervisor.remove_if_present(device_serial, "video", proc)
                     self._cleanup_video_debug_logs(proc)
-                    if attempt_index < len(attempts) and self._should_retry_video_launch(output["stdout"], output["stderr"]):
+                    if attempt_index < len(attempts) and self._should_retry_video_launch(
+                        output["stdout"], output["stderr"]
+                    ):
                         continue
                     self.log_message.emit(f"画面路由启动后立即退出 (设备: {device_serial})", "error")
                     self.operation_completed.emit("video_route", False)
@@ -669,7 +672,9 @@ class RouteService(QObject):
                         "poll_after_ready": proc.poll(),
                     },
                 )
-                self.log_message.emit(f"画面路由 (Scrcpy) 已启动，若已授权录屏，桌面端应很快出现窗口 (设备: {device_serial})", "success")
+                self.log_message.emit(
+                    f"画面路由 (Scrcpy) 已启动，若已授权录屏，桌面端应很快出现窗口 (设备: {device_serial})", "success"
+                )
                 self.operation_completed.emit("video_route", True)
                 self._task_runner.start(
                     name="route-watch-video",
@@ -683,7 +688,7 @@ class RouteService(QObject):
             return False
         except Exception as exc:
             logger.error("视频路由启动失败: %s", exc, exc_info=True)
-            self.log_message.emit(f"视频路由启动失败: {str(exc)}", "error")
+            self.log_message.emit(f"视频路由启动失败: {exc!s}", "error")
             self.operation_completed.emit("video_route", False)
             return False
 
@@ -723,8 +728,14 @@ class RouteService(QObject):
                 reg = self._process_registry.ensure(request.device_serial)
                 with reg["lock"]:
                     video_proc = reg.get("video", [])[-1] if reg.get("video") else None
-                if not video_started or video_proc is None or not self._wait_for_video_renderer(video_proc, request.device_serial):
-                    self.log_message.emit("画面链路尚未稳定，已暂停自动启动音频，请先确认录屏授权和图像窗口。", "warning")
+                if (
+                    not video_started
+                    or video_proc is None
+                    or not self._wait_for_video_renderer(video_proc, request.device_serial)
+                ):
+                    self.log_message.emit(
+                        "画面链路尚未稳定，已暂停自动启动音频，请先确认录屏授权和图像窗口。", "warning"
+                    )
                     return
                 if self._is_running():
                     self.log_message.emit("画面链路已稳定，开始建立音频链路。", "info")
@@ -760,10 +771,9 @@ class RouteService(QObject):
             on_shutdown_timeout=lambda: self._process_supervisor.kill_group(device_serial, "video"),
         )
         if return_code is not None:
-            try:
+            with contextlib.suppress(Exception):
+                # best-effort: setting returncode on a dead process is non-critical
                 proc.returncode = return_code
-            except Exception:
-                pass  # best-effort: setting returncode on a dead process is non-critical
         output = {
             "stdout": self._read_debug_file(getattr(proc, "_debug_stdout_log_path", None)),
             "stderr": self._read_debug_file(getattr(proc, "_debug_stderr_log_path", None)),
@@ -792,7 +802,7 @@ class RouteService(QObject):
         self._process_supervisor.remove_if_present(device_serial, "video", proc)
         self._cleanup_video_debug_logs(proc)
 
-    def _stop_streaming_internal(self, device_serial: Optional[str] = None) -> None:
+    def _stop_streaming_internal(self, device_serial: str | None = None) -> None:
         try:
             if device_serial is None:
                 for ds in list(self._process_registry.keys()):
@@ -807,9 +817,9 @@ class RouteService(QObject):
                 self.log_message.emit(f"已停止设备的流媒体路由 ({device_serial})", "info")
         except Exception as exc:
             logger.error("停止路由发生错误: %s", exc, exc_info=True)
-            self.log_message.emit(f"停止路由发生错误: {str(exc)}", "error")
+            self.log_message.emit(f"停止路由发生错误: {exc!s}", "error")
 
-    def stop_streaming(self, device_serial: Optional[str] = None) -> None:
+    def stop_streaming(self, device_serial: str | None = None) -> None:
         self._task_runner.start(
             name="route-stop-streaming",
             group="route",
@@ -817,7 +827,7 @@ class RouteService(QObject):
             args=(device_serial,),
         )
 
-    def stop_streaming_sync(self, device_serial: Optional[str] = None) -> None:
+    def stop_streaming_sync(self, device_serial: str | None = None) -> None:
         self._stop_streaming_internal(device_serial)
 
     def is_audio_running(self, device_serial: str) -> bool:
@@ -825,3 +835,9 @@ class RouteService(QObject):
         with reg["lock"]:
             audio_procs = list(reg.get("audio", []))
         return any(proc.poll() is None for proc in audio_procs)
+
+    def is_video_running(self, device_serial: str) -> bool:
+        reg = self._process_registry.ensure(device_serial)
+        with reg["lock"]:
+            video_procs = list(reg.get("video", []))
+        return any(proc.poll() is None for proc in video_procs)

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from app.domain.enums.file_type import FileType
 
@@ -15,7 +14,7 @@ class FileInfo:
     size: int
     date_str: str
     symlink_target: str = ""
-    is_symlink_to_dir: Optional[bool] = None
+    is_symlink_to_dir: bool | None = None
     raw_line: str = ""
 
     @property
@@ -32,7 +31,7 @@ class FileInfo:
 
     @property
     def is_root_owned(self) -> bool:
-        return self.owner == "root"
+        return self.owner in ("root", "0")
 
     @property
     def type_char_display(self) -> str:

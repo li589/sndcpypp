@@ -4,7 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-
 TaskStatus = Literal["starting", "running", "completed", "failed"]
 
 
@@ -160,9 +159,7 @@ class BackgroundTaskRunner:
 
             removable_name_set = set(removable_names)
             if removable_name_set:
-                self._failed_task_names = [
-                    name for name in self._failed_task_names if name not in removable_name_set
-                ]
+                self._failed_task_names = [name for name in self._failed_task_names if name not in removable_name_set]
             return len(removable_names)
 
     def wait_all(self, timeout: float | None = None) -> bool:

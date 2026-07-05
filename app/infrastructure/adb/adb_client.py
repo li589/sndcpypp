@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 import threading
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 
 class ADBClient:
@@ -12,11 +12,11 @@ class ADBClient:
 
     def run_logged(
         self,
-        command: List[str],
+        command: list[str],
         description: str = "",
-        cwd: str = None,
+        cwd: str | None = None,
         timeout_seconds: float | None = 15,
-    ) -> Optional[subprocess.CompletedProcess]:
+    ) -> subprocess.CompletedProcess | None:
         if not command:
             return None
         resolved_cwd = cwd
@@ -53,10 +53,10 @@ class ADBClient:
             timeout_label = f"{timeout_seconds:g}s" if timeout_seconds is not None else "未设置"
             self._log_callback(f"[{description}] 执行超时 ({timeout_label})", "error")
         except Exception as exc:
-            self._log_callback(f"[{description}] 执行失败: {str(exc)}", "error")
+            self._log_callback(f"[{description}] 执行失败: {exc!s}", "error")
         return None
 
-    def _format_command_for_log(self, command: List[str]) -> str:
+    def _format_command_for_log(self, command: list[str]) -> str:
         if not command:
             return ""
 
@@ -68,7 +68,7 @@ class ADBClient:
             formatted_parts.append(display_part)
         return " ".join(formatted_parts)
 
-    def _should_log_output(self, command: List[str], description: str, stream_name: str) -> bool:
+    def _should_log_output(self, command: list[str], description: str, stream_name: str) -> bool:
         if not command:
             return False
 
@@ -77,16 +77,11 @@ class ADBClient:
         is_adb_devices = "devices" in normalized_command and os.path.basename(command[0]).lower().startswith("adb")
 
         if is_adb_devices and (
-            "刷新设备列表" in description
-            or "重试刷新设备列表" in description
-            or "延迟重试刷新设备列表" in description
+            "刷新设备列表" in description or "重试刷新设备列表" in description or "延迟重试刷新设备列表" in description
         ):
             return False
 
-        if stream_name == "stderr" and is_adb_devices and "start-server" not in lowered_description:
-            return False
-
-        return True
+        return not (stream_name == "stderr" and is_adb_devices and "start-server" not in lowered_description)
 
     def _truncate_for_log(self, message: str, limit: int = 1200) -> str:
         if len(message) <= limit:

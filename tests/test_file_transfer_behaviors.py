@@ -123,11 +123,11 @@ _ensure_pyqt6_stubs()
 
 from app.domain.enums.file_type import FileType
 from app.domain.models.file_info import FileInfo
-from app.ui.main_window import SndcpyGUI
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
 from app.services.file_manager_service import FileManagerService
 from app.ui.file_actions import submit_upload_requests
+from app.ui.main_window import SndcpyGUI
 
 
 class _ImmediateTaskRunner:
@@ -366,12 +366,16 @@ class FileTransferBehaviorTests(unittest.TestCase):
 
             service._run_transfer_with_progress = _fake_transfer
 
-            with patch("app.services.file_manager_service.tempfile.gettempdir", return_value=temp_dir), patch(
-                "app.services.file_manager_service.uuid.uuid4",
-                return_value=fake_uuid,
-            ), patch(
-                "app.services.file_manager_service.shutil.move",
-                side_effect=PermissionError("denied"),
+            with (
+                patch("app.services.file_manager_service.tempfile.gettempdir", return_value=temp_dir),
+                patch(
+                    "app.services.file_manager_service.uuid.uuid4",
+                    return_value=fake_uuid,
+                ),
+                patch(
+                    "app.services.file_manager_service.shutil.move",
+                    side_effect=PermissionError("denied"),
+                ),
             ):
                 service.pull_file("device-1", "/sdcard/demo.txt", temp_dir)
 
@@ -435,9 +439,12 @@ class FileTransferBehaviorTests(unittest.TestCase):
         )
         proc = _BlockingTransferProc()
 
-        with patch("app.services.file_manager_service.subprocess.Popen", return_value=proc), patch(
-            "app.services.file_manager_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("app.services.file_manager_service.subprocess.Popen", return_value=proc),
+            patch(
+                "app.services.file_manager_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             success = service._run_transfer_with_progress(
                 "device-1",

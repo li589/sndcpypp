@@ -2,7 +2,6 @@ import sys
 import types
 import unittest
 
-
 if "PyQt6" not in sys.modules:
     qtcore = types.ModuleType("PyQt6.QtCore")
 

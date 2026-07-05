@@ -2,6 +2,7 @@ import os
 import shlex
 
 from PyQt6.QtCore import QObject, pyqtSignal
+
 from app.infrastructure.config.logging_config import get_logger
 
 logger = get_logger(__name__)

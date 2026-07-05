@@ -1,6 +1,6 @@
-import unittest
 import os
 import tempfile
+import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -60,7 +60,8 @@ class ADBDeviceServiceTests(unittest.TestCase):
         calls: list[str] = []
         service = ADBDeviceService(
             cmd_manager=_FakeCommandManager(),
-            run_adb_command=lambda cmd, desc: calls.append(desc) or SimpleNamespace(
+            run_adb_command=lambda cmd, desc: calls.append(desc)
+            or SimpleNamespace(
                 returncode=0,
                 stdout="List of devices attached\nserial-1\tdevice\n",
                 stderr="",
@@ -130,10 +131,11 @@ class ADBDeviceServiceTests(unittest.TestCase):
         def _fake_isfile(path: str) -> bool:
             return path in {"adb.exe", "player.exe"}
 
-        with patch("app.services.adb_device_service.os.path.isfile", side_effect=_fake_isfile), patch(
-            "app.services.adb_device_service.os.access", return_value=True
-        ), patch("app.services.adb_device_service.shutil.which", return_value=None), patch(
-            "app.services.adb_device_service.os.path.isdir", return_value=False
+        with (
+            patch("app.services.adb_device_service.os.path.isfile", side_effect=_fake_isfile),
+            patch("app.services.adb_device_service.os.access", return_value=True),
+            patch("app.services.adb_device_service.shutil.which", return_value=None),
+            patch("app.services.adb_device_service.os.path.isdir", return_value=False),
         ):
             service.validate_paths()
             task_runner.tasks.pop(0)()
@@ -171,9 +173,12 @@ class ADBDeviceServiceTests(unittest.TestCase):
             )
             service.validation_result.connect(lambda results: validation_results.append(results))
 
-            with patch("app.services.adb_device_service.os.access", return_value=True), patch(
-                "app.services.adb_device_service.shutil.which",
-                side_effect=lambda path: path if path in {"adb.exe", "player.exe"} else None,
+            with (
+                patch("app.services.adb_device_service.os.access", return_value=True),
+                patch(
+                    "app.services.adb_device_service.shutil.which",
+                    side_effect=lambda path: path if path in {"adb.exe", "player.exe"} else None,
+                ),
             ):
                 service.validate_paths()
                 task_runner.tasks.pop(0)()
@@ -208,7 +213,9 @@ class ADBDeviceServiceTests(unittest.TestCase):
         service.install_apk("device-1")
         task_runner.tasks.pop(0)()
 
-        self.assertEqual(calls, ["检查 sndcpy 安装状态 (device-1)", "直接安装APK (device-1)", "卸载旧版本", "重新安装APK"])
+        self.assertEqual(
+            calls, ["检查 sndcpy 安装状态 (device-1)", "直接安装APK (device-1)", "卸载旧版本", "重新安装APK"]
+        )
         self.assertEqual(completed, [("install", True)])
         self.assertTrue(any(level == "warning" and "尝试卸载旧版本并重新安装" in message for message, level in logs))
 

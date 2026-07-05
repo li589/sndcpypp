@@ -41,6 +41,11 @@ class ConsolePage(QWidget):
         self.device_combo = QComboBox()
         self.device_combo.addItem(CONSOLE_TARGET_NO_DEVICE)
         self.device_combo.addItem(CONSOLE_TARGET_SCRCPY)
+        # 长设备名处理：宽度基于最小字符数，闭合时省略显示，下拉列表和 tooltip 可看完整名称
+        self.device_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.device_combo.setMinimumContentsLength(12)
+        self.device_combo.currentTextChanged.connect(lambda text: self.device_combo.setToolTip(text))
+        self.device_combo.setToolTip(self.device_combo.currentText())
         bottom_cmd_layout.addWidget(self.device_combo, 1)
 
         self.cmd_input = command_input_factory()
@@ -50,7 +55,7 @@ class ConsolePage(QWidget):
 
         self.send_cmd_btn = QPushButton("执行")
         self.send_cmd_btn.clicked.connect(on_execute_command)
-        bottom_cmd_layout.addWidget(self.send_cmd_btn, 1, alignment=Qt.AlignmentFlag.AlignBottom)
+        bottom_cmd_layout.addWidget(self.send_cmd_btn, 1, alignment=Qt.AlignmentFlag.AlignCenter)
 
         console_splitter.addWidget(bottom_cmd_widget)
         console_splitter.setStretchFactor(0, 4)

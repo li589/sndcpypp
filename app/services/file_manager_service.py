@@ -1,3 +1,4 @@
+import contextlib
 import os
 import queue
 import shutil
@@ -6,9 +7,10 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, pyqtSignal
+
 from app.infrastructure.config.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -61,16 +63,20 @@ class _SymlinkResolverWorker(QObject):
 
         if "directory" in stdout:
             return True
-        if "permission denied" in stdout or "not found" in stdout or "unknown" in stdout or "broken" in stdout or stdout == "":
+        if (
+            "permission denied" in stdout
+            or "not found" in stdout
+            or "unknown" in stdout
+            or "broken" in stdout
+            or stdout == ""
+        ):
             ls_cmd = self.cmd_manager.get_target_cmd(
                 "list_files_detailed_cmd",
                 device_serial=self.device_serial,
                 remote_path=remote_path,
             )
             res_ls = self._run_subprocess_command(ls_cmd)
-            if res_ls.stdout and res_ls.stdout.startswith("d"):
-                return True
-            return False
+            return bool(res_ls.stdout and res_ls.stdout.startswith("d"))
         return False
 
     def _run_subprocess_command(self, cmd: list[str]) -> subprocess.CompletedProcess:
@@ -107,7 +113,7 @@ class FileManagerService(QObject):
         process_registry,
         process_supervisor,
         task_runner,
-        run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
+        run_adb_command: Callable[[list[str], str], subprocess.CompletedProcess | None],
         is_running: Callable[[], bool],
     ) -> None:
         super().__init__()
@@ -149,7 +155,9 @@ class FileManagerService(QObject):
                         name = name[:-1]
 
                     if len(name) >= 2:
-                        if (name.startswith("'") and name.endswith("'")) or (name.startswith('"') and name.endswith('"')):
+                        if (name.startswith("'") and name.endswith("'")) or (
+                            name.startswith('"') and name.endswith('"')
+                        ):
                             name = name[1:-1]
 
                     cleaned_name = ""
@@ -180,13 +188,14 @@ class FileManagerService(QObject):
             request_token = self._symlink_request_tokens.get(device_serial, 0) + 1
             self._symlink_request_tokens[device_serial] = request_token
             if device_serial in self._symlink_workers:
-                try:
+                with contextlib.suppress(Exception):
+                    # best-effort: worker thread may already be dead
                     self._symlink_workers[device_serial].stop()
-                except Exception:
-                    pass  # best-effort: worker thread may already be dead
                 del self._symlink_workers[device_serial]
 
-            cmd = self._cmd_manager.get_target_cmd("list_files_detailed_cmd", device_serial=device_serial, remote_path=path)
+            cmd = self._cmd_manager.get_target_cmd(
+                "list_files_detailed_cmd", device_serial=device_serial, remote_path=path
+            )
             # #region debug-point C:file-list-command
             _report_debug_event(
                 "C",
@@ -264,13 +273,17 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-list-detailed", group="files", target=_list)
 
-    def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list, request_token: int) -> None:
+    def _resolve_symlinks_async(
+        self, device_serial: str, current_path: str, file_list: list, request_token: int
+    ) -> None:
         symlinks_to_resolve = []
         for fi in file_list:
             if fi.file_type == FileType.SYMLINK and fi.symlink_target and fi.is_symlink_to_dir is None:
                 full_path = fi.symlink_target
                 if not full_path.startswith("/"):
-                    full_path = current_path + full_path if current_path.endswith("/") else current_path + "/" + full_path
+                    full_path = (
+                        current_path + full_path if current_path.endswith("/") else current_path + "/" + full_path
+                    )
                 symlinks_to_resolve.append((fi.name, full_path))
 
         if not symlinks_to_resolve:
@@ -430,7 +443,9 @@ class FileManagerService(QObject):
     ) -> bool:
         try:
             with self._get_transfer_lock(device_serial):
-                self.file_transfer_progress.emit("start", device_serial, transfer_kind, remote_path, f"正在{desc}...", 0)
+                self.file_transfer_progress.emit(
+                    "start", device_serial, transfer_kind, remote_path, f"正在{desc}...", 0
+                )
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 proc = subprocess.Popen(
                     cmd,
@@ -521,7 +536,7 @@ class FileManagerService(QObject):
             )
             return False
 
-    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str = None) -> None:
+    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str | None = None) -> None:
         clean_remote = remote_path.rstrip("/")
         if not clean_remote:
             clean_remote = "/"
@@ -575,10 +590,10 @@ class FileManagerService(QObject):
                         device_serial,
                         "pull",
                         "",
-                        f"下载 {target_name} 失败: {str(exc)}",
+                        f"下载 {target_name} 失败: {exc!s}",
                         0,
                     )
-                    self.log_message.emit(f"将缓存转移至目标目录时失败: {str(exc)}", "error")
+                    self.log_message.emit(f"将缓存转移至目标目录时失败: {exc!s}", "error")
                     try:
                         if os.path.isdir(temp_target_path):
                             shutil.rmtree(temp_target_path)
@@ -597,7 +612,7 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-pull", group="files", target=_pull_task)
 
-    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str = None) -> None:
+    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str | None = None) -> None:
         if not remote_dir.endswith("/"):
             remote_dir += "/"
         target_name = rename_to if rename_to else os.path.basename(local_path.rstrip("/"))
@@ -617,7 +632,7 @@ class FileManagerService(QObject):
             kwargs={"transfer_kind": "push", "remote_path": remote_dir},
         )
 
-    def stop_file_transfers(self, device_serial: Optional[str] = None) -> None:
+    def stop_file_transfers(self, device_serial: str | None = None) -> None:
         if device_serial is None:
             for ds in list(self._process_registry.keys()):
                 self._process_supervisor.kill_group(ds, "transfer")

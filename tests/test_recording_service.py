@@ -223,9 +223,12 @@ class RecordingServiceTests(unittest.TestCase):
             is_running=lambda: False,
         )
 
-        with patch("subprocess.Popen", return_value=_FakeProc()), patch(
-            "app.services.recording_service.time.sleep",
-            lambda _: None,
+        with (
+            patch("subprocess.Popen", return_value=_FakeProc()),
+            patch(
+                "app.services.recording_service.time.sleep",
+                lambda _: None,
+            ),
         ):
             service.start_recording(
                 device_serial="device-1",

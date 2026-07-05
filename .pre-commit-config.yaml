@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: 'AudioRouter/third_party/.*'
+      - id: end-of-file-fixer
+        exclude: 'AudioRouter/third_party/.*|vendor/.*'
+      - id: check-yaml
+        exclude: 'vendor/.*'
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+        exclude: 'vendor/.*|logo/.*'
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        exclude: 'vendor/.*|AudioRouter/third_party/.*'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ['--fix']
+        exclude: 'AudioRouter/third_party/.*|vendor/.*'
+      - id: ruff-format
+        exclude: 'AudioRouter/third_party/.*|vendor/.*'
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        additional_dependencies: ['types-PyYAML']
+        exclude: 'tests/|AudioRouter/|vendor/|build/|dist/'
+        args: ['--config-file=pyproject.toml']

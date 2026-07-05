@@ -254,12 +254,7 @@ def tray_recording_reminder_message(device_serial: str, elapsed_text: str) -> st
 
 def render_console_html(message: str, msg_type: str, timestamp: datetime) -> str:
     spec = CONSOLE_RENDER_SPECS.get(msg_type, CONSOLE_RENDER_SPECS["info"])
-    safe_message = (
-        message.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\n", "<br>")
-    )
+    safe_message = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
     time_text = timestamp.strftime("%H:%M:%S")
     return (
         f'<span style="color: #AAAAAA;">[{time_text}]</span> '
@@ -309,6 +304,7 @@ def param_settings_dialog_title(title: str) -> str:
 
 def param_settings_dialog_label(param_name: str) -> str:
     return f"输入 {param_name} 附加命令行参数 (空格分隔)："
+
 
 # --- Exit confirm dialog ---
 EXIT_DIALOG_TITLE = "退出确认"
