@@ -1,5 +1,8 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+
+import app.ui.main_window as main_window
 
 from app.ui.dialogs import ExitAction
 from app.ui.main_window import SndcpyGUI
@@ -7,6 +10,15 @@ from core import CoreController
 
 
 class MainResilienceTests(unittest.TestCase):
+    def test_resolve_app_base_dir_uses_pyinstaller_meipass_when_frozen(self):
+        with patch.object(main_window.sys, "frozen", True, create=True), patch.object(
+            main_window.sys,
+            "_MEIPASS",
+            "D:/Temp/_MEI123",
+            create=True,
+        ):
+            self.assertEqual(main_window._resolve_app_base_dir(), "D:\\Temp\\_MEI123")
+
     def test_startup_routine_keeps_running_when_usb_monitor_start_fails(self):
         logs: list[tuple[str, str]] = []
         calls: list[str] = []

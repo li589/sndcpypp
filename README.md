@@ -21,6 +21,7 @@ Sndcpy++ 是一个基于 Python 和 PyQt6 的桌面控制中心，用于统一�
 - 设置文件自动写入用户可写目录
 - 运行时默认优先自动发现系统 VLC 路径
 - 预留 `AudioRouter` 原生音频后端
+- 内置三平台 vendor 运行时依赖，便于直接打包发行
 
 ## 当前状态
 
@@ -71,11 +72,11 @@ app/infrastructure/adb/UsbMonitor.py   USB 监听通用模块
 - `pywin32==311`
 - `pyusb==1.3.1`
 
-可选打包依赖：
+打包依赖已固定在 `requirements.txt`：
 
 - `pyinstaller==6.19.0`
 
-建议优先使用仓库自带虚拟环境 `venv/`，或自行创建新的虚拟环境后安装依赖。
+Dependabot 会每周检查 pip 依赖和 GitHub Actions 版本。
 
 ## 安装依赖
 
@@ -104,6 +105,21 @@ python main.py
 ```bash
 python -m app.main
 ```
+
+## 发行构建
+
+推送 `v*` tag 会触发 GitHub Actions：
+
+- `Build Desktop App (Windows)`：构建 `sndcpypp-windows-x64.zip`
+- `Build AudioRouter (cross-platform)`：构建三平台 AudioRouter 产物
+
+本地 Windows 打包：
+
+```powershell
+.\venv\Scripts\python.exe -m PyInstaller main.spec --clean --noconfirm
+```
+
+产物位于 `dist/sndcpypp.exe`。
 
 ## 最小验证
 

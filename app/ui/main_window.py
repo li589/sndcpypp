@@ -6,6 +6,7 @@
 """
 
 import os
+import sys
 from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
@@ -99,14 +100,20 @@ def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict[
     del hypothesis_id, location, msg, data
 
 
+def _resolve_app_base_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.abspath(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 class SndcpyGUI(QMainWindow):
     usb_event_signal = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose)
-        # app_base_dir 始终指向项目根目录（app/ui/main_window.py 上溯两级）
-        self.app_base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # 开发环境指向项目根；PyInstaller onefile 环境指向 _MEIPASS 解包目录。
+        self.app_base_dir = _resolve_app_base_dir()
         configure_main_window_shell(self)
 
         self.core_controller = None
