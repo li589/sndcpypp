@@ -10,6 +10,22 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.ui.message_templates import (
+    DIALOG_BTN_CANCEL,
+    DIALOG_BTN_OK,
+    DIALOG_BTN_OVERWRITE,
+    DIALOG_BTN_RENAME,
+    DIALOG_BTN_SKIP,
+    DIALOG_LABEL_QUICK_FILL,
+    EXIT_DIALOG_BTN_EXIT,
+    EXIT_DIALOG_BTN_TRAY,
+    EXIT_DIALOG_MESSAGE,
+    EXIT_DIALOG_TITLE,
+    file_conflict_dialog_message,
+    file_conflict_dialog_title,
+    param_settings_dialog_label,
+)
+
 DIALOG_STYLESHEET = """
 QDialog, QMessageBox, QFileDialog { background-color: #2D2D30; color: #FFFFFF; }
 QLabel { color: #CCCCCC; font-size: 13px; }
@@ -30,7 +46,7 @@ class ExitAction(IntEnum):
 class ExitConfirmDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("退出确认")
+        self.setWindowTitle(EXIT_DIALOG_TITLE)
         self.setMinimumWidth(400)
         self.setStyleSheet(f"{DIALOG_STYLESHEET}\nQLabel {{ font-weight: bold; }}")
 
@@ -38,12 +54,12 @@ class ExitConfirmDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
 
-        layout.addWidget(QLabel("您点击了关闭按钮，请选择您的操作："))
+        layout.addWidget(QLabel(EXIT_DIALOG_MESSAGE))
 
         btn_layout = QHBoxLayout()
-        self.btn_tray = QPushButton("仅隐藏到托盘\n(保持后台路由运行)")
-        self.btn_exit = QPushButton("完全退出程序\n(彻底结束所有投屏)")
-        self.btn_cancel = QPushButton("取消")
+        self.btn_tray = QPushButton(EXIT_DIALOG_BTN_TRAY)
+        self.btn_exit = QPushButton(EXIT_DIALOG_BTN_EXIT)
+        self.btn_cancel = QPushButton(DIALOG_BTN_CANCEL)
 
         btn_layout.addWidget(self.btn_tray)
         btn_layout.addWidget(self.btn_exit)
@@ -70,14 +86,14 @@ class ParamSettingsDialog(QDialog):
         self.setStyleSheet(DIALOG_STYLESHEET)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"输入 {param_name} 附加命令行参数 (空格分隔)："))
+        layout.addWidget(QLabel(param_settings_dialog_label(param_name)))
         self.input_edit = QLineEdit()
         self.input_edit.setText(current_val)
         layout.addWidget(self.input_edit)
 
         if quick_fill_actions:
             quick_fill_layout = QHBoxLayout()
-            quick_fill_layout.addWidget(QLabel("快捷填充:"))
+            quick_fill_layout.addWidget(QLabel(DIALOG_LABEL_QUICK_FILL))
             for label, value in quick_fill_actions:
                 button = QPushButton(label)
                 button.clicked.connect(lambda _checked=False, fill_value=value: self.input_edit.setText(fill_value))
@@ -86,9 +102,9 @@ class ParamSettingsDialog(QDialog):
             layout.addLayout(quick_fill_layout)
 
         btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("确定保存")
+        ok_btn = QPushButton(DIALOG_BTN_OK)
         ok_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("取消")
+        cancel_btn = QPushButton(DIALOG_BTN_CANCEL)
         cancel_btn.clicked.connect(self.reject)
 
         btn_layout.addStretch()
@@ -105,8 +121,7 @@ class FileConflictDialog(QDialog):
 
     def __init__(self, filename: str, is_upload: bool = False, parent=None):
         super().__init__(parent)
-        op = "上传" if is_upload else "下载"
-        self.setWindowTitle(f"文件冲突 ({op})")
+        self.setWindowTitle(file_conflict_dialog_title(is_upload))
         self.setMinimumWidth(400)
         self.setStyleSheet(DIALOG_STYLESHEET)
 
@@ -114,12 +129,12 @@ class FileConflictDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
 
-        layout.addWidget(QLabel(f"<b>目标位置已存在同名项目：</b><br><br>{filename}<br><br>请选择操作："))
+        layout.addWidget(QLabel(file_conflict_dialog_message(filename)))
 
         btn_layout = QHBoxLayout()
-        self.btn_overwrite = QPushButton("覆盖替换")
-        self.btn_rename = QPushButton("自动重命名")
-        self.btn_skip = QPushButton("跳过")
+        self.btn_overwrite = QPushButton(DIALOG_BTN_OVERWRITE)
+        self.btn_rename = QPushButton(DIALOG_BTN_RENAME)
+        self.btn_skip = QPushButton(DIALOG_BTN_SKIP)
 
         self.btn_overwrite.setStyleSheet(
             "QPushButton { background-color: #E74C3C; border: 1px solid #C0392B; } "

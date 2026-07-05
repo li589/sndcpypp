@@ -6,6 +6,9 @@ from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from app.domain.models.operation_requests import RecordingState, RecordingStateEvent
+from app.infrastructure.config.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class RecordingService(QObject):
@@ -22,7 +25,7 @@ class RecordingService(QObject):
         start_audio_route: Callable[[str, int], None],
         stop_audio: Callable[[str], None],
         is_running: Callable[[], bool],
-    ):
+    ) -> None:
         super().__init__()
         self._cmd_manager = cmd_manager
         self._process_registry = process_registry
@@ -32,6 +35,39 @@ class RecordingService(QObject):
         self._start_audio_route = start_audio_route
         self._stop_audio = stop_audio
         self._is_running = is_running
+
+    def _wait_for_process_exit(
+        self,
+        proc,
+        *,
+        poll_interval: float = 0.2,
+        shutdown_grace_seconds: float = 3.0,
+        on_shutdown_timeout: Callable[[], None] | None = None,
+    ) -> int | None:
+        while True:
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            if not self._is_running():
+                break
+            time.sleep(poll_interval)
+
+        grace_checks = max(1, int(shutdown_grace_seconds / poll_interval))
+        for _ in range(grace_checks):
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            time.sleep(poll_interval)
+
+        if on_shutdown_timeout is not None:
+            on_shutdown_timeout()
+
+        for _ in range(grace_checks):
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            time.sleep(poll_interval)
+        return proc.poll()
 
     def _mark_intentional_record_stop(self, device_serial: str) -> None:
         reg = self._process_registry.ensure(device_serial)
@@ -48,7 +84,7 @@ class RecordingService(QObject):
         record_video: bool,
         record_audio: bool,
         record_ori_index: int = 0,
-    ):
+    ) -> None:
         def _rec():
             lock = self._process_registry.ensure(device_serial)["lock"]
             with lock:
@@ -115,15 +151,17 @@ class RecordingService(QObject):
                     )
 
                     def _monitor_and_restore():
-                        proc.wait()
+                        return_code = self._wait_for_process_exit(
+                            proc,
+                            on_shutdown_timeout=lambda: self._process_supervisor.kill_group(device_serial, "record"),
+                        )
                         reg = self._process_registry.ensure(device_serial)
                         with reg["lock"]:
                             stop_markers = reg.setdefault("intentional_record_stop_pids", set())
                             was_intentionally_stopped = proc.pid in stop_markers
                             stop_markers.discard(proc.pid)
-                        return_code = proc.poll()
                         self._process_supervisor.remove_if_present(device_serial, "record", proc)
-                        if return_code == 0 or was_intentionally_stopped:
+                        if return_code == 0 or was_intentionally_stopped or not self._is_running():
                             self.recording_state_changed.emit(
                                 RecordingStateEvent(RecordingState.STOPPED, device_serial, save_path)
                             )
@@ -152,7 +190,7 @@ class RecordingService(QObject):
 
         self._task_runner.start(name="record-start", group="recording", target=_rec)
 
-    def stop_recording(self, device_serial: Optional[str] = None):
+    def stop_recording(self, device_serial: Optional[str] = None) -> None:
         def _stop_rec_thread():
             if device_serial is None:
                 for ds in list(self._process_registry.keys()):

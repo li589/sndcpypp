@@ -1,0 +1,100 @@
+name: Build AudioRouter (cross-platform)
+
+# 触发条件：
+#   1. 手动触发（在 GitHub Actions 页面点 "Run workflow"）
+#   2. 推送 v* 开头的 tag 时自动触发（用于发 release）
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libpulse-dev
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -B build -S AudioRouter -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure CMake (macOS, universal binary)
+        if: runner.os == 'macOS'
+        run: cmake -B build -S AudioRouter -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Configure CMake (Linux)
+        if: runner.os == 'Linux'
+        run: cmake -B build -S AudioRouter -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Stage artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p staging
+          cp build/Release/AudioRouter.exe staging/AudioRouter-windows-x64.exe
+          # Windows 上 AudioRouter.exe 在 build/Release/ 下（MSVC 多配置生成器）
+          if [ ! -f staging/AudioRouter-windows-x64.exe ]; then
+            cp build/AudioRouter.exe staging/AudioRouter-windows-x64.exe
+          fi
+        shell: bash
+
+      - name: Stage artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p staging
+          cp build/AudioRouter staging/AudioRouter-macos-universal
+        shell: bash
+
+      - name: Stage artifact (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p staging
+          cp build/AudioRouter staging/AudioRouter-linux-x64
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioRouter-${{ runner.os }}
+          path: staging/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to Release (on tag)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Display structure
+        run: ls -laR artifacts
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

@@ -1,12 +1,129 @@
 import os
+import sys
 import tempfile
+import threading
+import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from main import SndcpyGUI
+
+class _DummyMeta(type):
+    def __getattr__(cls, name):
+        del name
+        return cls
+
+
+class _Dummy(metaclass=_DummyMeta):
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+
+    def __getattr__(self, name):
+        del name
+        return self
+
+    def __call__(self, *args, **kwargs):
+        del args, kwargs
+        return self
+
+    def __or__(self, other):
+        del other
+        return self
+
+    def __and__(self, other):
+        del other
+        return self
+
+    def __bool__(self):
+        return False
+
+    def __int__(self):
+        return 0
+
+
+class QObject:
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+
+    def deleteLater(self):
+        return None
+
+
+class _Signal:
+    def __init__(self, *args, **kwargs):
+        self._slots = []
+
+    def connect(self, slot):
+        self._slots.append(slot)
+
+    def emit(self, *args, **kwargs):
+        for slot in list(self._slots):
+            slot(*args, **kwargs)
+
+
+def pyqtSignal(*args, **kwargs):
+    del args, kwargs
+    return _Signal()
+
+
+def pyqtSlot(*args, **kwargs):
+    del args, kwargs
+
+    def _decorator(func):
+        return func
+
+    return _decorator
+
+
+def _ensure_pyqt6_stubs():
+    pyqt6 = sys.modules.setdefault("PyQt6", types.ModuleType("PyQt6"))
+    qtcore = sys.modules.setdefault("PyQt6.QtCore", types.ModuleType("PyQt6.QtCore"))
+    qtgui = sys.modules.setdefault("PyQt6.QtGui", types.ModuleType("PyQt6.QtGui"))
+    qtwidgets = sys.modules.setdefault("PyQt6.QtWidgets", types.ModuleType("PyQt6.QtWidgets"))
+
+    qtcore.QObject = getattr(qtcore, "QObject", QObject)
+    qtcore.pyqtSignal = getattr(qtcore, "pyqtSignal", pyqtSignal)
+    qtcore.pyqtSlot = getattr(qtcore, "pyqtSlot", pyqtSlot)
+    qtcore.QTimer = getattr(qtcore, "QTimer", _Dummy)
+    qtcore.Qt = getattr(qtcore, "Qt", _Dummy)
+    qtcore.__getattr__ = getattr(qtcore, "__getattr__", lambda name: _Dummy)
+
+    qtgui.QTextCursor = getattr(qtgui, "QTextCursor", _Dummy)
+    qtgui.__getattr__ = getattr(qtgui, "__getattr__", lambda name: _Dummy)
+
+    for attr_name in (
+        "QApplication",
+        "QMainWindow",
+        "QLabel",
+        "QLineEdit",
+        "QPushButton",
+        "QSystemTrayIcon",
+        "QTableWidgetItem",
+        "QCheckBox",
+        "QComboBox",
+        "QDialog",
+        "QListWidget",
+        "QSpinBox",
+        "QTableWidget",
+        "QWidget",
+        "QMenu",
+        "QAction",
+        "QMessageBox",
+        "QFileDialog",
+    ):
+        setattr(qtwidgets, attr_name, getattr(qtwidgets, attr_name, _Dummy))
+    qtwidgets.__getattr__ = getattr(qtwidgets, "__getattr__", lambda name: _Dummy)
+
+    pyqt6.QtCore = qtcore
+    pyqt6.QtGui = qtgui
+    pyqt6.QtWidgets = qtwidgets
+
+
+_ensure_pyqt6_stubs()
+
 from app.domain.enums.file_type import FileType
 from app.domain.models.file_info import FileInfo
+from app.ui.main_window import SndcpyGUI
 from app.infrastructure.process.registry import ProcessRegistry
 from app.infrastructure.process.supervisor import ProcessSupervisor
 from app.services.file_manager_service import FileManagerService
@@ -46,6 +163,86 @@ class _FakeCommandManager:
     def get_target_cmd(self, target_key: str, **kwargs):
         del kwargs
         return [target_key]
+
+
+class _StdoutStub:
+    def __init__(self, lines: list[str], trailing_text: str = ""):
+        self._lines = list(lines)
+        self._trailing_text = trailing_text
+
+    def readline(self):
+        if self._lines:
+            return self._lines.pop(0)
+        if self._trailing_text:
+            trailing = self._trailing_text
+            self._trailing_text = ""
+            return trailing
+        return ""
+
+    def read(self):
+        trailing = self._trailing_text
+        self._trailing_text = ""
+        return trailing
+
+
+class _TransferProc:
+    def __init__(self, returncode: int, lines: list[str], trailing_text: str = ""):
+        self.pid = 6789
+        self.returncode = None
+        self._final_returncode = returncode
+        self.stdout = _StdoutStub(lines, trailing_text)
+
+    def poll(self):
+        # 模拟进程已退出：新版本 _run_transfer_with_progress 依赖 poll() 检测退出
+        return self._final_returncode
+
+    def wait(self):
+        self.returncode = self._final_returncode
+        return self.returncode
+
+
+class _StopAwareSupervisor:
+    def __init__(self, registry: ProcessRegistry):
+        self._registry = registry
+
+    def kill_group(self, device_serial: str, group: str):
+        reg = self._registry.ensure(device_serial)
+        for proc in reg.get(group, []):
+            proc.returncode = 1
+        reg[group].clear()
+
+    def remove_if_present(self, device_serial: str, group: str, proc):
+        reg = self._registry.ensure(device_serial)
+        if proc in reg.get(group, []):
+            reg[group].remove(proc)
+
+
+class _BlockingStdout:
+    def __init__(self):
+        self.read_calls = 0
+
+    def readline(self):
+        threading.Event().wait(2)
+        return ""
+
+    def read(self):
+        self.read_calls += 1
+        raise AssertionError("shutdown cleanup should not call read()")
+
+
+class _BlockingTransferProc:
+    def __init__(self):
+        self.pid = 9876
+        self.returncode = None
+        self.stdout = _BlockingStdout()
+        self.wait_calls = 0
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self):
+        self.wait_calls += 1
+        raise AssertionError("shutdown cleanup should not call wait()")
 
 
 class FileTransferBehaviorTests(unittest.TestCase):
@@ -120,6 +317,79 @@ class FileTransferBehaviorTests(unittest.TestCase):
         self.assertEqual(progress_events[-1][1], "device-1")
         self.assertEqual(progress_events[-1][2], "pull")
         self.assertIn("denied", progress_events[-1][4])
+
+    def test_transfer_failure_uses_trailing_output_as_error_message(self):
+        registry = ProcessRegistry()
+        service = FileManagerService(
+            cmd_manager=_FakeCommandManager(),
+            ls_parser=None,
+            transfer_progress_parser=None,
+            process_registry=registry,
+            process_supervisor=ProcessSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: None,
+            is_running=lambda: True,
+        )
+        progress_events: list[tuple[str, str, str, str, str, int]] = []
+        service.file_transfer_progress.connect(
+            lambda status, device_serial, transfer_kind, remote_path, message, percent: progress_events.append(
+                (status, device_serial, transfer_kind, remote_path, message, percent)
+            )
+        )
+
+        with patch(
+            "app.services.file_manager_service.subprocess.Popen",
+            return_value=_TransferProc(1, ["50%\n"], "Permission denied\n"),
+        ):
+            success = service._run_transfer_with_progress(
+                "device-1",
+                ["push_file_cmd"],
+                "上传 demo.txt",
+                transfer_kind="push",
+                remote_path="/sdcard/",
+            )
+
+        self.assertFalse(success)
+        self.assertEqual(progress_events[-1][0], "error")
+        self.assertIn("Permission denied", progress_events[-1][4])
+
+    def test_transfer_shutdown_cleanup_does_not_block_on_stdout_or_wait(self):
+        registry = ProcessRegistry()
+        service = FileManagerService(
+            cmd_manager=_FakeCommandManager(),
+            ls_parser=None,
+            transfer_progress_parser=None,
+            process_registry=registry,
+            process_supervisor=_StopAwareSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: None,
+            is_running=lambda: False,
+        )
+        progress_events: list[tuple[str, str, str, str, str, int]] = []
+        service.file_transfer_progress.connect(
+            lambda status, device_serial, transfer_kind, remote_path, message, percent: progress_events.append(
+                (status, device_serial, transfer_kind, remote_path, message, percent)
+            )
+        )
+        proc = _BlockingTransferProc()
+
+        with patch("app.services.file_manager_service.subprocess.Popen", return_value=proc), patch(
+            "app.services.file_manager_service.time.sleep",
+            lambda _: None,
+        ):
+            success = service._run_transfer_with_progress(
+                "device-1",
+                ["push_file_cmd"],
+                "上传 demo.txt",
+                transfer_kind="push",
+                remote_path="/sdcard/",
+            )
+
+        self.assertFalse(success)
+        self.assertEqual(registry.ensure("device-1")["transfer"], [])
+        self.assertEqual(proc.wait_calls, 0)
+        self.assertEqual(proc.stdout.read_calls, 0)
+        self.assertEqual([event[0] for event in progress_events], ["start"])
 
     def test_stale_symlink_resolution_is_ignored_after_directory_switch(self):
         registry = ProcessRegistry()

@@ -265,3 +265,70 @@ def render_console_html(message: str, msg_type: str, timestamp: datetime) -> str
         f'<span style="color: #AAAAAA;">[{time_text}]</span> '
         f'<span style="color: {spec.color};">{spec.prefix} {safe_message}</span><br>'
     )
+
+
+# --- Popup titles ---
+POPUP_TITLE_AUDIO_CONFLICT = "音频冲突警告"
+POPUP_TITLE_FILE_EXISTS = "文件已存在"
+POPUP_TITLE_PLAYER_EXIT = "播放器意外退出"
+POPUP_TITLE_SUCCESS = "成功"
+POPUP_TITLE_ERROR = "错误"
+POPUP_TITLE_WARNING = "警告"
+POPUP_TITLE_FAILURE = "失败"
+
+# --- Popup messages ---
+POPUP_MSG_EXPORT_LOGS_SUCCESS = "日志已成功导出！"
+
+
+def popup_msg_export_logs_failure(error_text: str) -> str:
+    return f"日志导出失败: {error_text}"
+
+
+POPUP_MSG_DEVICE_REQUIRED = "请先在设备列表选择一个已经连接的设备"
+POPUP_MSG_RECORDING_DEVICE_REQUIRED = "请先选择一个已经连接的设备！"
+POPUP_MSG_RECORDING_TARGET_REQUIRED = "请至少选择录制视频或录制音频中的一项！"
+POPUP_MSG_RECORD_DIRECTORY_INVALID = "保存目录不存在！"
+
+
+def popup_msg_record_overwrite_failed(error_text: str) -> str:
+    return f"无法覆盖原文件，它可能正在被占用。\n{error_text}"
+
+
+POPUP_MSG_DOWNLOAD_DIRECTORY_INVALID = "本地下载目录无效，请检查下载路径！"
+POPUP_MSG_SNDCPY_INSTALL_SUCCESS = "SNDCPY安装成功"
+POPUP_MSG_SNDCPY_INSTALL_FAILED = "SNDCPY安装失败"
+
+# --- Param settings dialog ---
+CMD_SETTINGS_TITLES = {"adb": "ADB", "player": "播放器", "scrcpy": "Scrcpy"}
+POPUP_AUDIOROUTER_QUICK_FILL_LABEL = "AudioRouter 推荐"
+
+
+def param_settings_dialog_title(title: str) -> str:
+    return f"{title} 附加参数设置"
+
+
+def param_settings_dialog_label(param_name: str) -> str:
+    return f"输入 {param_name} 附加命令行参数 (空格分隔)："
+
+# --- Exit confirm dialog ---
+EXIT_DIALOG_TITLE = "退出确认"
+EXIT_DIALOG_MESSAGE = "您点击了关闭按钮，请选择您的操作："
+EXIT_DIALOG_BTN_TRAY = "仅隐藏到托盘\n(保持后台路由运行)"
+EXIT_DIALOG_BTN_EXIT = "完全退出程序\n(彻底结束所有投屏)"
+DIALOG_BTN_CANCEL = "取消"
+DIALOG_BTN_OK = "确定保存"
+DIALOG_LABEL_QUICK_FILL = "快捷填充:"
+
+# --- File conflict dialog ---
+DIALOG_BTN_OVERWRITE = "覆盖替换"
+DIALOG_BTN_RENAME = "自动重命名"
+DIALOG_BTN_SKIP = "跳过"
+
+
+def file_conflict_dialog_title(is_upload: bool) -> str:
+    op = "上传" if is_upload else "下载"
+    return f"文件冲突 ({op})"
+
+
+def file_conflict_dialog_message(filename: str) -> str:
+    return f"<b>目标位置已存在同名项目：</b><br><br>{filename}<br><br>请选择操作："

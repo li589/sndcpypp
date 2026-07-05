@@ -48,6 +48,11 @@ class _FakeCommandManager:
 
 
 class ADBDeviceServiceTests(unittest.TestCase):
+    def test_install_succeeded_does_not_treat_failure_text_with_success_substring_as_success(self):
+        result = SimpleNamespace(returncode=1, stdout="", stderr="Failure: installation not successful")
+
+        self.assertFalse(ADBDeviceService._install_succeeded(result))
+
     def test_refresh_devices_queues_one_follow_up_refresh(self):
         task_runner = _QueuedTaskRunner()
         calls: list[str] = []

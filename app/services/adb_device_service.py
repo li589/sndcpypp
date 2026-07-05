@@ -6,6 +6,10 @@ import time
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
+from app.infrastructure.config.logging_config import get_logger
+from app.infrastructure.adb.path_resolver import resolve_apk_path
+
+logger = get_logger(__name__)
 
 
 def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
@@ -28,7 +32,7 @@ class ADBDeviceService(QObject):
         self._last_device_snapshot: tuple[str, ...] | None = None
         self._sndcpy_package = "com.rom1v.sndcpy"
 
-    def validate_paths(self):
+    def validate_paths(self) -> None:
         def _validate():
             results = [0, 0, 0]
             adb_path = self._cmd_manager.get_variable("adb_path")
@@ -62,7 +66,7 @@ class ADBDeviceService(QObject):
             if sndcpy_dir and os.path.isdir(sndcpy_dir):
                 ext = ".exe" if os.name == "nt" else ""
                 scrcpy_path = os.path.join(sndcpy_dir, f"scrcpy{ext}")
-                apk_path = os.path.join(sndcpy_dir, "sndcpy.apk")
+                apk_path = resolve_apk_path(sndcpy_dir, os.path.abspath("."))
                 if is_exe(scrcpy_path) and os.path.isfile(apk_path):
                     results[2] = 1
                     self._cmd_manager.update_variable("scrcpy_path", scrcpy_path)
@@ -70,13 +74,13 @@ class ADBDeviceService(QObject):
                 else:
                     self.log_message.emit("在目录中未找到 sndcpy.apk 或 scrcpy 核心文件", "error")
             else:
-                self.log_message.emit("Sndcpy 目录无效", "error")
+                self.log_message.emit("vendor 目录无效", "error")
 
             self.validation_result.emit(results)
 
         self._task_runner.start(name="adb-validate-paths", group="adb", target=_validate)
 
-    def refresh_devices(self):
+    def refresh_devices(self) -> None:
         if self._is_refreshing:
             self._refresh_pending = True
             return
@@ -119,7 +123,7 @@ class ADBDeviceService(QObject):
 
         self._task_runner.start(name="adb-refresh-devices", group="adb", target=_refresh)
 
-    def install_apk(self, device_serial: str):
+    def install_apk(self, device_serial: str) -> None:
         def _install():
             try:
                 was_installed_before = self._is_sndcpy_installed(device_serial)
@@ -188,7 +192,7 @@ class ADBDeviceService(QObject):
 
         self._task_runner.start(name="adb-install-apk", group="adb", target=_install)
 
-    def force_kill_adb(self):
+    def force_kill_adb(self) -> None:
         def _kill():
             self.log_message.emit("正在强制结束 ADB 进程池...", "warning")
             try:
@@ -214,14 +218,14 @@ class ADBDeviceService(QObject):
 
         self._task_runner.start(name="adb-force-kill", group="adb", target=_kill)
 
-    def start_adb_server(self):
+    def start_adb_server(self) -> None:
         def _start():
             self.log_message.emit("正在唤起 ADB 并枚举设备...", "info")
             self.refresh_devices()
 
         self._task_runner.start(name="adb-start-server", group="adb", target=_start)
 
-    def restart_adb(self):
+    def restart_adb(self) -> None:
         def _restart():
             self._run_adb_command(self._cmd_manager.get_target_cmd("restart_adb_kill_cmd"), "杀掉ADB")
             time.sleep(1.0)
@@ -288,9 +292,13 @@ class ADBDeviceService(QObject):
         if result is None:
             return False
         output = cls._result_text(result).lower()
-        if "success" in output:
+        if result.returncode == 0 and (
+            "success" in output
+            or "successfully" in output
+            or output == ""
+        ):
             return True
-        return result.returncode == 0 and not output
+        return False
 
     @classmethod
     def _install_indicates_existing_package(cls, result: Optional[subprocess.CompletedProcess]) -> bool:

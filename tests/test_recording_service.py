@@ -52,8 +52,12 @@ class _FakeProc:
     def __init__(self):
         self.pid = 4321
         self._returncode = None
+        self._poll_count = 0
 
     def poll(self):
+        self._poll_count += 1
+        if self._returncode is None and self._poll_count >= 2:
+            self._returncode = 0
         return self._returncode
 
     def wait(self):
@@ -67,10 +71,24 @@ class _FailingProc(_FakeProc):
         self._failing_returncode = returncode
         self._on_wait = on_wait
 
+    def poll(self):
+        self._poll_count += 1
+        if self._returncode is None and self._poll_count >= 2:
+            if self._on_wait is not None:
+                self._on_wait()
+                self._on_wait = None
+            self._returncode = self._failing_returncode
+        return self._returncode
+
     def wait(self):
         if self._on_wait is not None:
             self._on_wait()
         self._returncode = self._failing_returncode
+        return self._returncode
+
+
+class _StuckProc(_FakeProc):
+    def poll(self):
         return self._returncode
 
 
@@ -258,6 +276,38 @@ class RecordingServiceTests(unittest.TestCase):
 
         self.assertEqual(states[0], (RecordingState.STARTED, "device-1", "D:/capture.mp4"))
         self.assertEqual(states[-1], (RecordingState.STOPPED, "device-1", "D:/capture.mp4"))
+
+    def test_wait_for_process_exit_triggers_shutdown_cleanup_for_stuck_process(self):
+        registry = ProcessRegistry()
+        service = RecordingService(
+            cmd_manager=_FakeCommandManager(),
+            process_registry=registry,
+            process_supervisor=_StopAwareSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            probe_scrcpy_features=lambda: {
+                "record_ori": False,
+                "capture_ori": False,
+                "lock_video_ori": False,
+                "degrees": False,
+                "no_playback": "--no-playback",
+            },
+            start_audio_route=lambda device, port: None,
+            stop_audio=lambda device: None,
+            is_running=lambda: False,
+        )
+        proc = _StuckProc()
+        registry.register("device-1", "record", proc)
+
+        with patch("app.services.recording_service.time.sleep", lambda _: None):
+            return_code = service._wait_for_process_exit(
+                proc,
+                poll_interval=0.01,
+                shutdown_grace_seconds=0.02,
+                on_shutdown_timeout=lambda: service._process_supervisor.kill_group("device-1", "record"),
+            )
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(registry.ensure("device-1")["record"], [])
 
 
 if __name__ == "__main__":

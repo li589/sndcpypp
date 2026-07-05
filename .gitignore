@@ -21,6 +21,17 @@ AudioRouter/build/
 AudioRouter/backup/
 AudioRouter/.vscode/
 
+# vendor/ 下按平台放置的外部二进制（sndcpy.apk / adb / scrcpy / dll 等）不进 git，
+# 用户需自行下载放入对应子目录，详见 vendor/README.md
+vendor/**
+!vendor/README.md
+!vendor/windows/
+!vendor/windows/.gitkeep
+!vendor/macos/
+!vendor/macos/.gitkeep
+!vendor/linux/
+!vendor/linux/.gitkeep
+
 .pytest_cache/
 .mypy_cache/
 .dbg/

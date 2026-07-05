@@ -378,5 +378,10 @@ class CoreController(QObject):
         self.execute_console_target(request)
 
     # Legacy/internal compatibility
-    def _run_adb_command_internal(self, command: List[str], description: str = "") -> Optional[subprocess.CompletedProcess]:
-        return self._adb_client.run_logged(command, description)
+    def _run_adb_command_internal(
+        self,
+        command: List[str],
+        description: str = "",
+        timeout_seconds: float | None = 15,
+    ) -> Optional[subprocess.CompletedProcess]:
+        return self._adb_client.run_logged(command, description, timeout_seconds=timeout_seconds)

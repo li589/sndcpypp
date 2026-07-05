@@ -13,6 +13,26 @@ class ResolvedADBPath:
     used_fallback: bool
 
 
+def get_platform_vendor_subdir() -> str:
+    """返回当前平台对应的 vendor 子目录名（windows/macos/linux）。"""
+    import sys
+
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux"
+
+
+def resolve_apk_path(sndcpy_dir: str, project_root: str) -> str:
+    """解析 sndcpy.apk 路径：优先用户 sndcpy_dir 下的同名文件，回退到 vendor/sndcpy.apk。"""
+    if sndcpy_dir:
+        candidate = os.path.join(sndcpy_dir, "sndcpy.apk")
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return os.path.abspath(os.path.join(project_root, "vendor", "sndcpy.apk"))
+
+
 class ADBPathResolver:
     def __init__(self, project_root: str):
         self._project_root = os.path.abspath(project_root)
@@ -33,7 +53,7 @@ class ADBPathResolver:
         for candidate in self._discover_external_candidates():
             self._add_candidate(candidates, seen, candidate[0], candidate[1])
 
-        self._add_candidate(candidates, seen, bundled_path, "内置 Sndcpy")
+        self._add_candidate(candidates, seen, bundled_path, "内置 vendor")
 
         for raw_path, source in candidates:
             resolved_path = self._resolve_existing_path(raw_path)
@@ -80,7 +100,7 @@ class ADBPathResolver:
     def _get_bundled_adb_path(self, sndcpy_dir: str) -> str:
         candidate_dir = (sndcpy_dir or "").strip()
         if not candidate_dir:
-            candidate_dir = os.path.join(self._project_root, "Sndcpy")
+            candidate_dir = os.path.join(self._project_root, "vendor", get_platform_vendor_subdir())
         return os.path.abspath(os.path.join(candidate_dir, f"adb{self._ext}"))
 
     def _resolve_existing_path(self, raw_path: str) -> str:
@@ -123,7 +143,7 @@ class ADBPathResolver:
 
     def _is_usable_adb(self, adb_path: str) -> bool:
         normalized = self._normalize_path(adb_path)
-        if normalized in self._viability_cache:
+        if self._viability_cache.get(normalized):
             return self._viability_cache[normalized]
 
         try:
@@ -141,5 +161,8 @@ class ADBPathResolver:
         except Exception:
             is_usable = False
 
-        self._viability_cache[normalized] = is_usable
+        if is_usable:
+            self._viability_cache[normalized] = True
+        else:
+            self._viability_cache.pop(normalized, None)
         return is_usable

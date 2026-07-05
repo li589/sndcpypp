@@ -13,6 +13,9 @@ if "PyQt6" not in sys.modules:
         def __init__(self, *args, **kwargs):
             pass
 
+        def deleteLater(self):
+            return None
+
     class _Signal:
         def __init__(self, *args, **kwargs):
             self._slots = []
@@ -159,6 +162,11 @@ class _LogBackedProc(_ManagedProc):
         self._debug_stderr_log_path = stderr_log_path
 
 
+class _WaitForbiddenLogBackedProc(_LogBackedProc):
+    def wait(self):
+        raise AssertionError("video watcher should not call wait()")
+
+
 class _TransientRunningProc(_ExitedProc):
     def __init__(self):
         super().__init__(returncode=None)
@@ -197,12 +205,17 @@ class _StopAwareSupervisor:
 
 
 class RouteServiceTests(unittest.TestCase):
-    def _build_service(self, registry: ProcessRegistry, run_calls: list[tuple[list[str], str]]) -> RouteService:
+    def _build_service(
+        self,
+        registry: ProcessRegistry,
+        run_calls: list[tuple[list[str], str]],
+        task_runner=None,
+    ) -> RouteService:
         return RouteService(
             cmd_manager=_FakeCommandManager(),
             process_registry=registry,
             process_supervisor=ProcessSupervisor(registry),
-            task_runner=_ImmediateTaskRunner(),
+            task_runner=task_runner or _ImmediateTaskRunner(),
             run_adb_command=lambda cmd, desc: run_calls.append((cmd, desc)) or SimpleNamespace(
                 returncode=0,
                 stdout="",
@@ -425,13 +438,13 @@ class RouteServiceTests(unittest.TestCase):
         self.assertEqual(popen_calls[0].count("-Idummy"), 1)
         self.assertEqual(popen_calls[0].count("--demux"), 1)
 
-    def test_start_audio_route_keeps_running_process_registered_during_shutdown(self):
+    def test_start_audio_route_shutdown_cleanup_stops_lingering_process(self):
         registry = ProcessRegistry()
         running_state = {"value": True}
         service = RouteService(
             cmd_manager=_FakeCommandManager(),
             process_registry=registry,
-            process_supervisor=ProcessSupervisor(registry),
+            process_supervisor=_StopAwareSupervisor(registry),
             task_runner=_ImmediateTaskRunner(),
             run_adb_command=lambda cmd, desc: SimpleNamespace(returncode=0, stdout="", stderr=""),
             probe_scrcpy_features=lambda: {
@@ -455,7 +468,7 @@ class RouteServiceTests(unittest.TestCase):
         ), patch.object(service, "_wait_until_process_ready", side_effect=_mark_shutdown):
             service.start_audio_route("device-1", port=28200)
 
-        self.assertIn(proc, registry.ensure("device-1")["audio"])
+        self.assertEqual(registry.ensure("device-1")["audio"], [])
 
     def test_stop_audio_internal_uses_device_specific_saved_port(self):
         registry = ProcessRegistry()
@@ -516,7 +529,8 @@ class RouteServiceTests(unittest.TestCase):
     def test_watch_video_process_cleans_debug_logs_after_exit(self):
         registry = ProcessRegistry()
         service = self._build_service(registry, [])
-        proc = _ManagedProc()
+        # 使用 _ExitedProc(0) 模拟已正常退出的进程，避免 _wait_for_process_exit 无限轮询
+        proc = _ExitedProc(0)
 
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file, tempfile.NamedTemporaryFile(
             "w", delete=False, encoding="utf-8"
@@ -529,6 +543,41 @@ class RouteServiceTests(unittest.TestCase):
         registry.register("device-1", "video", proc)
         service._watch_video_process("device-1", proc)
 
+        self.assertFalse(os.path.exists(stdout_file.name))
+        self.assertFalse(os.path.exists(stderr_file.name))
+
+    def test_watch_video_process_shutdown_cleanup_does_not_block_on_wait(self):
+        registry = ProcessRegistry()
+        logs: list[tuple[str, str]] = []
+        service = RouteService(
+            cmd_manager=_FakeCommandManager(),
+            process_registry=registry,
+            process_supervisor=_StopAwareSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: SimpleNamespace(returncode=0, stdout="", stderr=""),
+            probe_scrcpy_features=lambda: {
+                "display_ori": False,
+                "capture_ori": False,
+                "lock_video_ori": False,
+                "degrees": False,
+            },
+            is_running=lambda: False,
+        )
+        service.log_message.connect(lambda message, level: logs.append((message, level)))
+
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as stdout_file, tempfile.NamedTemporaryFile(
+            "w", delete=False, encoding="utf-8"
+        ) as stderr_file:
+            stdout_file.write("Renderer: direct3d11")
+            stderr_file.write("")
+            proc = _WaitForbiddenLogBackedProc(stdout_file.name, stderr_file.name)
+
+        registry.register("device-1", "video", proc)
+        with patch("app.services.route_service.time.sleep", lambda _: None):
+            service._watch_video_process("device-1", proc)
+
+        self.assertEqual(registry.ensure("device-1")["video"], [])
+        self.assertFalse(any("异常退出" in message for message, _level in logs))
         self.assertFalse(os.path.exists(stdout_file.name))
         self.assertFalse(os.path.exists(stderr_file.name))
 
@@ -682,7 +731,7 @@ class RouteServiceTests(unittest.TestCase):
         registry = ProcessRegistry()
         run_calls: list[tuple[list[str], str]] = []
         popen_calls: list[list[str]] = []
-        service = self._build_service(registry, run_calls)
+        service = self._build_service(registry, run_calls, task_runner=_DeferredVideoWatcherTaskRunner())
 
         def _capture_popen(cmd, **kwargs):
             del kwargs

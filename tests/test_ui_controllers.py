@@ -1,4 +1,5 @@
 import os
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
 from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
 from app.ui.device_service_coordinator import finalize_operation_ui, submit_adb_service_action
+from app.infrastructure.adb.path_resolver import ADBPathResolver
 from app.ui.file_page_controller import FilePageController
 from app.ui.popup_manager import PopupManager
 from app.ui.runtime_settings import (
@@ -263,7 +265,8 @@ class RuntimeSettingsTests(unittest.TestCase):
 
         self.assertEqual(resolution.path, "resolved-adb")
         self.assertEqual(player_path, os.path.abspath("C:/VLC/vlc.exe"))
-        self.assertEqual(os.path.basename(sndcpy_dir), "Sndcpy")
+        expected_subdir = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
+        self.assertEqual(os.path.basename(sndcpy_dir), expected_subdir)
         self.assertEqual(resolver_calls, [("", sndcpy_dir)])
 
     def test_resolve_runtime_paths_falls_back_to_audio_router_when_vlc_is_missing(self):
@@ -297,6 +300,7 @@ class RuntimeSettingsTests(unittest.TestCase):
             get_audio_router_recommended_args(),
             "-Idummy --demux rawaud --network-caching=200 --play-and-exit",
         )
+
 
     def test_collect_and_apply_ui_settings_round_trip(self):
         window = self._build_window_stub()
@@ -376,6 +380,24 @@ class RuntimeSettingsTests(unittest.TestCase):
             captured["quick_fill_actions"],
             [("AudioRouter 推荐", get_audio_router_recommended_args())],
         )
+
+
+class ADBPathResolverTests(unittest.TestCase):
+    def test_negative_viability_result_is_not_cached(self):
+        resolver = ADBPathResolver("D:/App")
+
+        with patch("app.infrastructure.adb.path_resolver.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                SimpleNamespace(returncode=1),
+                SimpleNamespace(returncode=0),
+            ]
+
+            first = resolver._is_usable_adb("C:/tools/adb.exe")
+            second = resolver._is_usable_adb("C:/tools/adb.exe")
+
+        self.assertFalse(first)
+        self.assertTrue(second)
+        self.assertEqual(mock_run.call_count, 2)
 
 
 class FilePageControllerTests(unittest.TestCase):

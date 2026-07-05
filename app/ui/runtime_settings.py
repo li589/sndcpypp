@@ -5,7 +5,7 @@ from typing import Any
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QLineEdit
 
 from app.domain.models.operation_requests import RuntimeConfigurationRequest
-from app.infrastructure.adb.path_resolver import ResolvedADBPath
+from app.infrastructure.adb.path_resolver import ResolvedADBPath, get_platform_vendor_subdir
 
 
 def get_audio_router_candidate_paths(app_base_dir: str) -> list[str]:
@@ -30,12 +30,22 @@ def get_audio_router_recommended_args() -> str:
     return "-Idummy --demux rawaud --network-caching=200 --play-and-exit"
 
 
+def is_audio_router_path(player_path: str) -> bool:
+    if not player_path:
+        return False
+    basename = os.path.basename(player_path).lower()
+    return basename == "audiorouter" or basename == "audiorouter.exe"
+
+
 def get_default_player_path(app_base_dir: str) -> str:
     ext = ".exe" if os.name == "nt" else ""
-    candidate_names = [f"vlc{ext}", "vlc"]
     candidate_paths: list[str] = []
 
-    for name in candidate_names:
+    # AudioRouter is preferred (native C++ backend, VLC-compatible CLI)
+    candidate_paths.extend(get_audio_router_candidate_paths(app_base_dir))
+
+    # VLC as fallback
+    for name in [f"vlc{ext}", "vlc"]:
         resolved = shutil.which(name)
         if resolved:
             candidate_paths.append(resolved)
@@ -51,7 +61,6 @@ def get_default_player_path(app_base_dir: str) -> str:
                 continue
             candidate_paths.append(os.path.join(base_dir, "VideoLAN", "VLC", "vlc.exe"))
 
-    candidate_paths.extend(get_audio_router_candidate_paths(app_base_dir))
     candidate_paths.append(os.path.join(app_base_dir, "RouteAudio", f"AudioExt{ext}"))
 
     for candidate in candidate_paths:
@@ -62,7 +71,18 @@ def get_default_player_path(app_base_dir: str) -> str:
 
 
 def get_default_sndcpy_dir(app_base_dir: str) -> str:
-    return os.path.abspath(os.path.join(app_base_dir, "Sndcpy"))
+    """返回当前平台 vendor 子目录的绝对路径。
+
+    语义说明：变量名沿用 `sndcpy_dir` 是历史包袱，实际指向 scrcpy/adb
+    等二进制所在目录（不再包含 sndcpy.apk，apk 单独放在 vendor/ 顶层）。
+    """
+    subdir = get_platform_vendor_subdir()
+    return os.path.abspath(os.path.join(app_base_dir, "vendor", subdir))
+
+
+def get_default_apk_path(app_base_dir: str) -> str:
+    """返回 sndcpy.apk 的默认路径（vendor/sndcpy.apk，与平台无关）。"""
+    return os.path.abspath(os.path.join(app_base_dir, "vendor", "sndcpy.apk"))
 
 
 def resolve_runtime_paths(

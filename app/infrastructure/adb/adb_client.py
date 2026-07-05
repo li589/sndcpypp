@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import threading
 from typing import Callable, List, Optional
@@ -23,6 +24,10 @@ class ADBClient:
             executable_path = os.path.abspath(command[0])
             if os.path.isfile(executable_path):
                 resolved_cwd = os.path.dirname(executable_path)
+            else:
+                resolved_from_path = shutil.which(command[0])
+                if resolved_from_path and os.path.isfile(resolved_from_path):
+                    resolved_cwd = os.path.dirname(os.path.abspath(resolved_from_path))
         cmd_str = self._format_command_for_log(command)
         command_label = description.strip() or "执行命令"
         self._log_callback(f"{command_label}: {cmd_str}", "command")

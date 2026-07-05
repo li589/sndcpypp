@@ -16,6 +16,41 @@ from app.ui.interaction_helpers import (
     recording_audio_conflict_message,
     resolve_conflict_choice,
 )
+from app.ui.message_templates import (
+    CMD_SETTINGS_TITLES,
+    DIALOG_BTN_CANCEL,
+    DIALOG_BTN_OK,
+    DIALOG_BTN_OVERWRITE,
+    DIALOG_BTN_RENAME,
+    DIALOG_BTN_SKIP,
+    DIALOG_LABEL_QUICK_FILL,
+    EXIT_DIALOG_BTN_EXIT,
+    EXIT_DIALOG_BTN_TRAY,
+    EXIT_DIALOG_MESSAGE,
+    EXIT_DIALOG_TITLE,
+    POPUP_AUDIOROUTER_QUICK_FILL_LABEL,
+    POPUP_MSG_DEVICE_REQUIRED,
+    POPUP_MSG_DOWNLOAD_DIRECTORY_INVALID,
+    POPUP_MSG_EXPORT_LOGS_SUCCESS,
+    POPUP_MSG_RECORD_DIRECTORY_INVALID,
+    POPUP_MSG_RECORDING_DEVICE_REQUIRED,
+    POPUP_MSG_RECORDING_TARGET_REQUIRED,
+    POPUP_MSG_SNDCPY_INSTALL_FAILED,
+    POPUP_MSG_SNDCPY_INSTALL_SUCCESS,
+    POPUP_TITLE_AUDIO_CONFLICT,
+    POPUP_TITLE_ERROR,
+    POPUP_TITLE_FAILURE,
+    POPUP_TITLE_FILE_EXISTS,
+    POPUP_TITLE_PLAYER_EXIT,
+    POPUP_TITLE_SUCCESS,
+    POPUP_TITLE_WARNING,
+    file_conflict_dialog_message,
+    file_conflict_dialog_title,
+    param_settings_dialog_label,
+    param_settings_dialog_title,
+    popup_msg_export_logs_failure,
+    popup_msg_record_overwrite_failed,
+)
 from app.ui.runtime_settings import get_audio_router_recommended_args
 
 
@@ -47,14 +82,13 @@ class PopupManager:
         return reply == QMessageBox.StandardButton.Yes
 
     def open_param_settings(self, cmd_type: str, current_val: str) -> str | None:
-        titles = {"adb": "ADB", "player": "播放器", "scrcpy": "Scrcpy"}
-        title = titles.get(cmd_type, "")
+        title = CMD_SETTINGS_TITLES.get(cmd_type, "")
         quick_fill_actions: list[tuple[str, str]] = []
         if cmd_type == "player":
-            quick_fill_actions.append(("AudioRouter 推荐", get_audio_router_recommended_args()))
+            quick_fill_actions.append((POPUP_AUDIOROUTER_QUICK_FILL_LABEL, get_audio_router_recommended_args()))
         dialog = ParamSettingsDialog(
             self.parent,
-            title=f"{title} 附加参数设置",
+            title=param_settings_dialog_title(title),
             param_name=title,
             current_val=current_val,
             quick_fill_actions=quick_fill_actions,
@@ -75,13 +109,13 @@ class PopupManager:
         return action
 
     def confirm_recording_audio_conflict(self) -> bool:
-        return self.confirm("音频冲突警告", recording_audio_conflict_message(), default_no=True)
+        return self.confirm(POPUP_TITLE_AUDIO_CONFLICT, recording_audio_conflict_message(), default_no=True)
 
     def confirm_overwrite_existing_file(self, filename: str) -> bool:
-        return self.confirm("文件已存在", overwrite_file_message(filename), default_no=True)
+        return self.confirm(POPUP_TITLE_FILE_EXISTS, overwrite_file_message(filename), default_no=True)
 
     def confirm_restart_audio_route(self, device_serial: str) -> bool:
-        return self.confirm("播放器意外退出", player_exit_message(device_serial), default_no=True)
+        return self.confirm(POPUP_TITLE_PLAYER_EXIT, player_exit_message(device_serial), default_no=True)
 
     def resolve_file_conflict(
         self,
@@ -125,34 +159,34 @@ class PopupManager:
         return None
 
     def show_export_logs_success(self) -> None:
-        self.info("成功", "日志已成功导出！")
+        self.info(POPUP_TITLE_SUCCESS, POPUP_MSG_EXPORT_LOGS_SUCCESS)
 
     def show_export_logs_failure(self, error_text: str) -> None:
-        self.error("错误", f"日志导出失败: {error_text}")
+        self.error(POPUP_TITLE_ERROR, popup_msg_export_logs_failure(error_text))
 
     def show_device_required_warning(self) -> None:
-        self.warning("警告", "请先在设备列表选择一个已经连接的设备")
+        self.warning(POPUP_TITLE_WARNING, POPUP_MSG_DEVICE_REQUIRED)
 
     def show_recording_device_required_warning(self) -> None:
-        self.warning("警告", "请先选择一个已经连接的设备！")
+        self.warning(POPUP_TITLE_WARNING, POPUP_MSG_RECORDING_DEVICE_REQUIRED)
 
     def show_recording_target_required_warning(self) -> None:
-        self.warning("警告", "请至少选择录制视频或录制音频中的一项！")
+        self.warning(POPUP_TITLE_WARNING, POPUP_MSG_RECORDING_TARGET_REQUIRED)
 
     def show_record_directory_invalid(self) -> None:
-        self.error("错误", "保存目录不存在！")
+        self.error(POPUP_TITLE_ERROR, POPUP_MSG_RECORD_DIRECTORY_INVALID)
 
     def show_record_overwrite_failed(self, error_text: str) -> None:
-        self.error("错误", f"无法覆盖原文件，它可能正在被占用。\n{error_text}")
+        self.error(POPUP_TITLE_ERROR, popup_msg_record_overwrite_failed(error_text))
 
     def show_download_directory_invalid(self) -> None:
-        self.error("错误", "本地下载目录无效，请检查下载路径！")
+        self.error(POPUP_TITLE_ERROR, POPUP_MSG_DOWNLOAD_DIRECTORY_INVALID)
 
     def show_install_result(self, success: bool) -> None:
         if success:
-            self.info("成功", "SNDCPY安装成功")
+            self.info(POPUP_TITLE_SUCCESS, POPUP_MSG_SNDCPY_INSTALL_SUCCESS)
             return
-        self.warning("失败", "SNDCPY安装失败")
+        self.warning(POPUP_TITLE_FAILURE, POPUP_MSG_SNDCPY_INSTALL_FAILED)
 
     def _show_message_box(self, icon: QMessageBox.Icon, title: str, message: str) -> None:
         box = self._create_message_box(icon, title, message, QMessageBox.StandardButton.Ok)

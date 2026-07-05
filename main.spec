@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('Sndcpy', 'Sndcpy')],
+    datas=[('vendor', 'vendor')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

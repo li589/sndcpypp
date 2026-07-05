@@ -80,28 +80,6 @@ def resolve_conflict_choice(
     return "skip", None
 
 
-def scoped_status_text(
-    device_serial: str | None,
-    device_template: str,
-    all_devices_text: str,
-) -> str:
-    if device_serial:
-        return device_template.format(device=device_serial)
-    return all_devices_text
-
-
-def validation_status_text(adb_valid: bool, player_valid: bool, sndcpy_valid: bool) -> str:
-    return (
-        f"路径验证: ADB {'有效' if adb_valid else '无效'} | "
-        f"播放器 {'有效' if player_valid else '无效'} | "
-        f"sndcpy {'有效' if sndcpy_valid else '无效'}"
-    )
-
-
-def device_count_status_text(device_count: int) -> str:
-    return f"找到 {device_count} 台设备" if device_count else "未找到设备"
-
-
 def recording_audio_conflict_message() -> str:
     return (
         "检测到当前设备的音频路由正在运行。\n\n"

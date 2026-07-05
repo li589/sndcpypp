@@ -47,12 +47,20 @@ Sndcpy++ 是一个基于 Python 和 PyQt6 的桌面控制中心，用于统一�
 ```text
 app/            新增的重构代码与分层骨架
 docs/           架构与设计文档
-AudioRouter/    C++ 原生音频接收/播放实验项目
-Sndcpy/         adb/scrcpy/sndcpy.apk 等运行资源
-main.py         现有 GUI 主入口
+AudioRouter/    C++ 原生音频接收/播放实验项目（跨平台，三平台均原生编译）
+vendor/         跨平台外部二进制依赖（sndcpy.apk + windows/macos/linux 子目录）
+main.py         现有 GUI 主入口（兼容垫片，已迁移到 app/ui/main_window.py）
 core.py         现有后端控制核心
 app/infrastructure/adb/UsbMonitor.py   USB 监听通用模块
 ```
+
+> vendor/ 目录结构：
+> - `vendor/sndcpy.apk` —— 平台无关，从 [rom1v/sndcpy](https://github.com/rom1v/sndcpy/releases) 下载
+> - `vendor/windows/` —— `adb.exe` / `scrcpy.exe` / `*.dll`
+> - `vendor/macos/` —— `adb` / `scrcpy`
+> - `vendor/linux/` —— `adb` / `scrcpy`
+>
+> 代码会按 `sys.platform` 自动选对应子目录，详见 `app/infrastructure/adb/path_resolver.py` 的 `get_platform_vendor_subdir()`。
 
 ## 依赖
 

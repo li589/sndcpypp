@@ -1,12 +1,17 @@
 import os
+import queue
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
+from app.infrastructure.config.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 from app.domain.enums.file_type import FileType
 from app.infrastructure.fileops.ls_parser import LSAllParser
@@ -22,7 +27,7 @@ class _SymlinkResolverWorker(QObject):
     finished = pyqtSignal()
     log_message = pyqtSignal(str, str)
 
-    def __init__(self, cmd_manager, device_serial, symlinks, adb_lock: threading.Lock):
+    def __init__(self, cmd_manager, device_serial, symlinks, adb_lock: threading.Lock) -> None:
         super().__init__()
         self.cmd_manager = cmd_manager
         self.device_serial = device_serial
@@ -30,10 +35,10 @@ class _SymlinkResolverWorker(QObject):
         self._adb_lock = adb_lock
         self._running = True
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
 
-    def run(self):
+    def run(self) -> None:
         for name, full_path in self.symlinks:
             if not self._running:
                 break
@@ -104,7 +109,7 @@ class FileManagerService(QObject):
         task_runner,
         run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
         is_running: Callable[[], bool],
-    ):
+    ) -> None:
         super().__init__()
         self._cmd_manager = cmd_manager
         self._ls_parser = ls_parser or LSAllParser()
@@ -119,7 +124,7 @@ class FileManagerService(QObject):
         self._adb_lock = threading.Lock()
         self._transfer_lock = threading.Lock()
 
-    def list_device_files(self, device_serial: str, path: str):
+    def list_device_files(self, device_serial: str, path: str) -> None:
         def _list():
             cmd = self._cmd_manager.get_target_cmd("list_files_cmd", device_serial=device_serial, remote_path=path)
             with self._adb_lock:
@@ -169,7 +174,7 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-list-basic", group="files", target=_list)
 
-    def list_device_files_detailed(self, device_serial: str, path: str):
+    def list_device_files_detailed(self, device_serial: str, path: str) -> None:
         def _list():
             request_token = self._symlink_request_tokens.get(device_serial, 0) + 1
             self._symlink_request_tokens[device_serial] = request_token
@@ -177,7 +182,7 @@ class FileManagerService(QObject):
                 try:
                     self._symlink_workers[device_serial].stop()
                 except Exception:
-                    pass
+                    pass  # best-effort: worker thread may already be dead
                 del self._symlink_workers[device_serial]
 
             cmd = self._cmd_manager.get_target_cmd("list_files_detailed_cmd", device_serial=device_serial, remote_path=path)
@@ -258,7 +263,7 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-list-detailed", group="files", target=_list)
 
-    def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list, request_token: int):
+    def _resolve_symlinks_async(self, device_serial: str, current_path: str, file_list: list, request_token: int) -> None:
         symlinks_to_resolve = []
         for fi in file_list:
             if fi.file_type == FileType.SYMLINK and fi.symlink_target and fi.is_symlink_to_dir is None:
@@ -295,6 +300,119 @@ class FileManagerService(QObject):
 
         self._task_runner.start(name="files-resolve-symlinks", group="files", target=_run_worker)
 
+    def _wait_for_process_exit(
+        self,
+        proc,
+        *,
+        poll_interval: float = 0.2,
+        shutdown_grace_seconds: float = 3.0,
+        on_shutdown_timeout: Callable[[], None] | None = None,
+    ) -> int | None:
+        while True:
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            if not self._is_running():
+                break
+            time.sleep(poll_interval)
+
+        grace_checks = max(1, int(shutdown_grace_seconds / poll_interval))
+        for _ in range(grace_checks):
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            time.sleep(poll_interval)
+
+        if on_shutdown_timeout is not None:
+            on_shutdown_timeout()
+
+        for _ in range(grace_checks):
+            return_code = proc.poll()
+            if return_code is not None:
+                return return_code
+            time.sleep(poll_interval)
+        return proc.poll()
+
+    @staticmethod
+    def _start_transfer_output_reader(proc) -> tuple[queue.Queue[str], threading.Event]:
+        output_queue: queue.Queue[str] = queue.Queue()
+        output_finished = threading.Event()
+
+        def _reader():
+            try:
+                if proc.stdout is None:
+                    return
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    output_queue.put(line)
+            except Exception:
+                pass  # best-effort: stream ended or pipe broken
+            finally:
+                output_finished.set()
+
+        threading.Thread(target=_reader, name="sndcpypp-transfer-output", daemon=True).start()
+        return output_queue, output_finished
+
+    def _consume_transfer_output_line(
+        self,
+        line: str,
+        *,
+        device_serial: str,
+        transfer_kind: str,
+        remote_path: str,
+        last_output_line: str,
+    ) -> str:
+        line = line.strip()
+        if not line:
+            return last_output_line
+        last_output_line = line
+        percent = self._transfer_progress_parser.extract_percent(line)
+        if percent is not None:
+            self.file_transfer_progress.emit(
+                "progress",
+                device_serial,
+                transfer_kind,
+                remote_path,
+                f"传输中: {percent}%",
+                percent,
+            )
+        return last_output_line
+
+    def _drain_transfer_output_queue(
+        self,
+        output_queue: queue.Queue[str],
+        output_finished: threading.Event,
+        *,
+        device_serial: str,
+        transfer_kind: str,
+        remote_path: str,
+        last_output_line: str,
+        wait_seconds: float = 0.5,
+        poll_interval: float = 0.05,
+    ) -> str:
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            drained_any = False
+            while True:
+                try:
+                    line = output_queue.get_nowait()
+                except queue.Empty:
+                    break
+                drained_any = True
+                last_output_line = self._consume_transfer_output_line(
+                    line,
+                    device_serial=device_serial,
+                    transfer_kind=transfer_kind,
+                    remote_path=remote_path,
+                    last_output_line=last_output_line,
+                )
+            if output_finished.is_set() or time.monotonic() >= deadline:
+                return last_output_line
+            if not drained_any:
+                time.sleep(poll_interval)
+
     def _run_transfer_with_progress(
         self,
         device_serial: str,
@@ -320,30 +438,50 @@ class FileManagerService(QObject):
                 )
                 self._process_registry.register(device_serial, "transfer", proc)
 
-                buffer = ""
-                while self._is_running():
-                    char = proc.stdout.read(1)
-                    if not char:
+                last_output_line = ""
+                output_queue, output_finished = self._start_transfer_output_reader(proc)
+                shutdown_requested = False
+                process_exit_observed_at = None
+                while True:
+                    if not self._is_running():
+                        shutdown_requested = True
                         break
-                    if char in ("\r", "\n"):
-                        percent = self._transfer_progress_parser.extract_percent(buffer)
-                        if percent is not None:
-                            self.file_transfer_progress.emit(
-                                "progress",
-                                device_serial,
-                                transfer_kind,
-                                remote_path,
-                                f"传输中: {percent}%",
-                                percent,
-                            )
-                        buffer = ""
-                    else:
-                        buffer += char
+                    try:
+                        line = output_queue.get(timeout=0.2)
+                    except queue.Empty:
+                        if proc.poll() is not None:
+                            if output_finished.is_set() and output_queue.empty():
+                                break
+                            if process_exit_observed_at is None:
+                                process_exit_observed_at = time.monotonic()
+                            elif time.monotonic() - process_exit_observed_at >= 0.5:
+                                break
+                        else:
+                            process_exit_observed_at = None
+                        continue
+                    last_output_line = self._consume_transfer_output_line(
+                        line,
+                        device_serial=device_serial,
+                        transfer_kind=transfer_kind,
+                        remote_path=remote_path,
+                        last_output_line=last_output_line,
+                    )
 
-                proc.wait()
+                return_code = self._wait_for_process_exit(
+                    proc,
+                    on_shutdown_timeout=lambda: self._process_supervisor.kill_group(device_serial, "transfer"),
+                )
+                last_output_line = self._drain_transfer_output_queue(
+                    output_queue,
+                    output_finished,
+                    device_serial=device_serial,
+                    transfer_kind=transfer_kind,
+                    remote_path=remote_path,
+                    last_output_line=last_output_line,
+                )
                 self._process_supervisor.remove_if_present(device_serial, "transfer", proc)
 
-                if proc.returncode == 0:
+                if return_code == 0:
                     if emit_done:
                         self.file_transfer_progress.emit(
                             "done",
@@ -354,7 +492,10 @@ class FileManagerService(QObject):
                             100,
                         )
                     return True
-                err = buffer.strip() or "目标路径无效、断开或【无权限(如Android/data目录)】"
+
+                if shutdown_requested and not self._is_running():
+                    return False
+                err = last_output_line or "目标路径无效、断开或【无权限(如Android/data目录)】"
                 self.file_transfer_progress.emit(
                     "error",
                     device_serial,
@@ -375,7 +516,7 @@ class FileManagerService(QObject):
             )
             return False
 
-    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str = None):
+    def pull_file(self, device_serial: str, remote_path: str, local_dir: str, rename_to: str = None) -> None:
         clean_remote = remote_path.rstrip("/")
         if not clean_remote:
             clean_remote = "/"
@@ -447,11 +588,11 @@ class FileManagerService(QObject):
                     else:
                         os.remove(temp_target_path)
                 except Exception:
-                    pass
+                    pass  # best-effort: temp file cleanup after failed transfer
 
         self._task_runner.start(name="files-pull", group="files", target=_pull_task)
 
-    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str = None):
+    def push_file(self, device_serial: str, local_path: str, remote_dir: str, rename_to: str = None) -> None:
         if not remote_dir.endswith("/"):
             remote_dir += "/"
         target_name = rename_to if rename_to else os.path.basename(local_path.rstrip("/"))
@@ -471,7 +612,7 @@ class FileManagerService(QObject):
             kwargs={"transfer_kind": "push", "remote_path": remote_dir},
         )
 
-    def stop_file_transfers(self, device_serial: Optional[str] = None):
+    def stop_file_transfers(self, device_serial: Optional[str] = None) -> None:
         if device_serial is None:
             for ds in list(self._process_registry.keys()):
                 self._process_supervisor.kill_group(ds, "transfer")
