@@ -23,7 +23,9 @@ class ScrcpyCapabilitiesProbe:
         features = default_features.copy()
         try:
             flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            res = subprocess.run([scrcpy_path, "--help"], capture_output=True, text=True, creationflags=flags)
+            res = subprocess.run(
+                [scrcpy_path, "--help"], capture_output=True, text=True, creationflags=flags, timeout=10
+            )
             help_text = res.stdout + res.stderr
             if "--display-orientation" in help_text:
                 features["display_ori"] = True

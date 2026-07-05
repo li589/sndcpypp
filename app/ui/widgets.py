@@ -107,7 +107,7 @@ class SwitchControl(QWidget):
         self.thumb_pos = self.margin
         self.setMinimumSize(58, 18)
         self.text_list = ["", ""]
-        self.timer = QTimer()
+        self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_position)
 
     def paintEvent(self, event: QPaintEvent | None):

@@ -61,11 +61,13 @@ def build_recording_filename(device_serial: str, file_ext: str, filename_input: 
 def allocate_available_name(target_name: str, exists: Callable[[str], bool]) -> str:
     base, ext = _split_name(target_name)
     counter = 1
-    while True:
+    while counter <= 9999:
         candidate = f"{base} ({counter}){ext}"
         if not exists(candidate):
             return candidate
         counter += 1
+    # 超过上限时回退到原始名称，由调用方处理冲突
+    return target_name
 
 
 def resolve_conflict_choice(

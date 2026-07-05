@@ -65,8 +65,11 @@ class JsonSettingsStore:
         directory = os.path.dirname(os.path.abspath(self.file_path))
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with open(self.file_path, "w", encoding="utf-8") as file:
+        # 原子写入：先写临时文件再 os.replace，避免写入中途崩溃导致设置文件损坏
+        tmp_path = self.file_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as file:
             json.dump(settings, file, indent=4)
+        os.replace(tmp_path, self.file_path)
         return settings
 
     def _backup_invalid_file(self) -> str | None:

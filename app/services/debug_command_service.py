@@ -34,6 +34,9 @@ class DebugCommandService(QObject):
 
                 if cmd_type == "scrcpy":
                     scrcpy_path = self._cmd_manager.get_variable("scrcpy_path")
+                    if not scrcpy_path:
+                        self.log_message.emit("scrcpy 路径未配置，无法执行 scrcpy 命令", "error")
+                        return
                     sndcpy_dir = self._cmd_manager.get_variable("sndcpy_dir")
                     full_command = shlex.split(command_str)
 

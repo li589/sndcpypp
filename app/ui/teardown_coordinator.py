@@ -18,6 +18,7 @@ def handle_close_event(
     log_to_console: Callable[[str, str], None],
     scan_timer,
     tray_icon,
+    extra_timers=None,
 ) -> ExitAction:
     """统一处理主窗口 `closeEvent` 的退出确认与资源清理流程。
 
@@ -48,6 +49,12 @@ def handle_close_event(
 
     if scan_timer is not None and hasattr(scan_timer, "isActive") and scan_timer.isActive():
         scan_timer.stop()
+
+    # 停止其他活跃定时器（status_indicator_timer 等），避免退出时触发已销毁对象
+    if extra_timers:
+        for timer in extra_timers:
+            if timer is not None and hasattr(timer, "isActive") and timer.isActive():
+                timer.stop()
 
     if tray_icon is not None:
         tray_icon.hide()

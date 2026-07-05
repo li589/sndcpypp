@@ -115,21 +115,23 @@ class DevicePageController:
         special_items = special_items or []
         current_text = combo.currentText()
         combo.blockSignals(True)
-        combo.clear()
-        for item in special_items:
-            combo.addItem(item)
-            combo.setItemData(combo.count() - 1, item, Qt.ItemDataRole.ToolTipRole)
-        for device in devices:
-            combo.addItem(device)
-            combo.setItemData(combo.count() - 1, device, Qt.ItemDataRole.ToolTipRole)
+        try:
+            combo.clear()
+            for item in special_items:
+                combo.addItem(item)
+                combo.setItemData(combo.count() - 1, item, Qt.ItemDataRole.ToolTipRole)
+            for device in devices:
+                combo.addItem(device)
+                combo.setItemData(combo.count() - 1, device, Qt.ItemDataRole.ToolTipRole)
 
-        idx = combo.findText(current_text)
-        if idx >= 0:
-            combo.setCurrentIndex(idx)
-        elif combo.count() > 0:
-            if devices and special_items:
-                combo.setCurrentIndex(len(special_items))
-            else:
-                combo.setCurrentIndex(0)
-        combo.setToolTip(combo.currentText())
-        combo.blockSignals(False)
+            idx = combo.findText(current_text)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            elif combo.count() > 0:
+                if devices and special_items:
+                    combo.setCurrentIndex(len(special_items))
+                else:
+                    combo.setCurrentIndex(0)
+            combo.setToolTip(combo.currentText())
+        finally:
+            combo.blockSignals(False)

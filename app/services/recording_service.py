@@ -183,15 +183,19 @@ class RecordingService(QObject):
 
     def stop_recording(self, device_serial: str | None = None) -> None:
         def _stop_rec_thread():
-            if device_serial is None:
-                for ds in list(self._process_registry.keys()):
-                    with self._process_registry.ensure(ds)["lock"]:
-                        self._mark_intentional_record_stop(ds)
-                        self._process_supervisor.kill_group(ds, "record")
-            else:
-                with self._process_registry.ensure(device_serial)["lock"]:
-                    self._mark_intentional_record_stop(device_serial)
-                    self._process_supervisor.kill_group(device_serial, "record")
+            try:
+                if device_serial is None:
+                    for ds in list(self._process_registry.keys()):
+                        with self._process_registry.ensure(ds)["lock"]:
+                            self._mark_intentional_record_stop(ds)
+                            self._process_supervisor.kill_group(ds, "record")
+                else:
+                    with self._process_registry.ensure(device_serial)["lock"]:
+                        self._mark_intentional_record_stop(device_serial)
+                        self._process_supervisor.kill_group(device_serial, "record")
+            except Exception as exc:
+                self.log_message.emit(f"停止录制出错: {exc!s}", "error")
+                return
             self.log_message.emit(log_recording_finished_awaiting_mux(), "success")
 
         self._task_runner.start(name="record-stop", group="recording", target=_stop_rec_thread)

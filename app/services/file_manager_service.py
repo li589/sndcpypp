@@ -189,11 +189,12 @@ class FileManagerService(QObject):
         def _list():
             request_token = self._symlink_request_tokens.get(device_serial, 0) + 1
             self._symlink_request_tokens[device_serial] = request_token
-            if device_serial in self._symlink_workers:
+            # 用 pop 替代 if+del，避免并发时 del 抛 KeyError
+            worker = self._symlink_workers.pop(device_serial, None)
+            if worker is not None:
                 with contextlib.suppress(Exception):
                     # best-effort: worker thread may already be dead
-                    self._symlink_workers[device_serial].stop()
-                del self._symlink_workers[device_serial]
+                    worker.stop()
 
             cmd = self._cmd_manager.get_target_cmd(
                 "list_files_detailed_cmd", device_serial=device_serial, remote_path=path
@@ -554,7 +555,9 @@ class FileManagerService(QObject):
                 try:
                     real_target_path = os.path.join(local_dir, target_name)
                     if os.path.exists(real_target_path):
-                        if os.path.isdir(real_target_path):
+                        if os.path.islink(real_target_path):
+                            os.remove(real_target_path)
+                        elif os.path.isdir(real_target_path):
                             shutil.rmtree(real_target_path)
                         else:
                             os.remove(real_target_path)

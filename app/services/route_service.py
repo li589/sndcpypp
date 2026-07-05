@@ -584,7 +584,11 @@ class RouteService(QObject):
                 stdout_log_path = self._create_temp_log_path(device_serial, "stdout")
                 stderr_log_path = self._create_temp_log_path(device_serial, "stderr")
                 stdout_log = open(stdout_log_path, "w", encoding="utf-8", errors="replace")
-                stderr_log = open(stderr_log_path, "w", encoding="utf-8", errors="replace")
+                try:
+                    stderr_log = open(stderr_log_path, "w", encoding="utf-8", errors="replace")
+                except Exception:
+                    stdout_log.close()
+                    raise
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -796,9 +800,12 @@ class RouteService(QObject):
         try:
             if device_serial is None:
                 for ds in list(self._process_registry.keys()):
-                    self._mark_intentional_video_stop(ds)
-                    self._process_supervisor.kill_group(ds, "video")
-                    self._stop_audio_internal(ds)
+                    try:
+                        self._mark_intentional_video_stop(ds)
+                        self._process_supervisor.kill_group(ds, "video")
+                        self._stop_audio_internal(ds)
+                    except Exception as exc:
+                        logger.error("停止设备 %s 路由发生错误: %s", ds, exc, exc_info=True)
                 self.log_message.emit(log_all_streams_force_stopped(), "info")
             else:
                 self._mark_intentional_video_stop(device_serial)

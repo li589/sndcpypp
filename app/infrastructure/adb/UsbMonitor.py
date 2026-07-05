@@ -309,6 +309,9 @@ class WindowsUSBMonitor(USBMonitorBase):
                 except Exception:
                     if self._stop_event.wait(1):
                         break
+        except Exception:
+            # WMI 初始化阶段失败时记录日志，避免线程静默死亡导致看门狗无限重启
+            self._stop_event.wait(2)
         finally:
             wmi_client = None
             pythoncom.CoUninitialize()

@@ -5,6 +5,7 @@
 拆分，直至本模块仅保留窗口骨架与生命周期协调。
 """
 
+import contextlib
 import os
 import sys
 from typing import Any
@@ -229,7 +230,9 @@ class SndcpyGUI(QMainWindow):
             usb_monitor=usb_monitor,
         )
         if not ok and usb_monitor is not None:
-            # 启动失败时清理引用，避免后续重复使用已损坏的实例
+            # 启动失败时先停止监控线程再清理引用，避免线程泄漏
+            with contextlib.suppress(Exception):
+                usb_monitor.stop_monitoring()
             self.usb_monitor = None
 
     def set_auto_refresh_value(self, value: int):
@@ -772,4 +775,8 @@ class SndcpyGUI(QMainWindow):
             log_to_console=self.log_to_console,
             scan_timer=getattr(self, "scan_timer", None),
             tray_icon=getattr(self, "tray_icon", None),
+            extra_timers=[
+                getattr(self, "status_indicator_timer", None),
+                getattr(self, "usb_debounce_timer", None),
+            ],
         )
