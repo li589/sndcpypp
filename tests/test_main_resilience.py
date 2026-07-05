@@ -1,3 +1,4 @@
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,16 +11,17 @@ from core import CoreController
 
 class MainResilienceTests(unittest.TestCase):
     def test_resolve_app_base_dir_uses_pyinstaller_meipass_when_frozen(self):
+        meipass = "D:/Temp/_MEI123" if os.name == "nt" else "/tmp/_MEI123"
         with (
             patch.object(main_window.sys, "frozen", True, create=True),
             patch.object(
                 main_window.sys,
                 "_MEIPASS",
-                "D:/Temp/_MEI123",
+                meipass,
                 create=True,
             ),
         ):
-            self.assertEqual(main_window._resolve_app_base_dir(), "D:\\Temp\\_MEI123")
+            self.assertEqual(main_window._resolve_app_base_dir(), os.path.abspath(meipass))
 
     def test_startup_routine_keeps_running_when_usb_monitor_start_fails(self):
         logs: list[tuple[str, str]] = []

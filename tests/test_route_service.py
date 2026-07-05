@@ -77,12 +77,20 @@ class _DeferredVideoWatcherTaskRunner:
 
 class _FakeCommandManager:
     def __init__(self, values=None):
+        if os.name == "nt":
+            adb_path = r"D:\tools\adb\adb.exe"
+            scrcpy_path = r"D:\tools\scrcpy\scrcpy.exe"
+            player_path = "vlc.exe"
+        else:
+            adb_path = "/tools/adb/adb"
+            scrcpy_path = "/tools/scrcpy/scrcpy"
+            player_path = "vlc"
         self._values = {
             "port": "28200",
-            "adb_path": r"D:\tools\adb\adb.exe",
-            "player_path": "vlc.exe",
+            "adb_path": adb_path,
+            "player_path": player_path,
             "player_extra": "",
-            "scrcpy_path": r"D:\tools\scrcpy\scrcpy.exe",
+            "scrcpy_path": scrcpy_path,
         }
         if values:
             self._values.update(values)
@@ -689,7 +697,8 @@ class RouteServiceTests(unittest.TestCase):
         ):
             service.start_video_route("device-1")
 
-        self.assertEqual(popen_kwargs[0]["cwd"], r"D:\tools\scrcpy")
+        expected_cwd = os.path.dirname(os.path.abspath(_FakeCommandManager()._values["scrcpy_path"]))
+        self.assertEqual(popen_kwargs[0]["cwd"], expected_cwd)
 
     def test_start_video_route_passes_configured_adb_via_env(self):
         registry = ProcessRegistry()

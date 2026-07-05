@@ -1,3 +1,4 @@
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -120,14 +121,17 @@ class ADBClientTests(unittest.TestCase):
         client = ADBClient(lambda message, level: logs.append((message, level)))
         completed = SimpleNamespace(returncode=0, stdout="", stderr="")
 
+        adb_dir = os.path.join(os.sep, "tools", "adb")
+        adb_exe = os.path.join(adb_dir, "adb.exe" if os.name == "nt" else "adb")
+
         with (
             patch(
                 "app.infrastructure.adb.adb_client.os.path.isfile",
-                side_effect=lambda path: path == r"C:\tools\adb\adb.exe",
+                side_effect=lambda path: os.path.normcase(path) == os.path.normcase(adb_exe),
             ),
             patch(
                 "app.infrastructure.adb.adb_client.shutil.which",
-                return_value=r"C:\tools\adb\adb.exe",
+                return_value=adb_exe,
             ),
             patch(
                 "app.infrastructure.adb.adb_client.subprocess.run",
@@ -137,7 +141,7 @@ class ADBClientTests(unittest.TestCase):
             result = client.run_logged(["adb", "version"], "测试命令")
 
         self.assertIs(result, completed)
-        self.assertEqual(mock_run.call_args.kwargs["cwd"], r"C:\tools\adb")
+        self.assertEqual(mock_run.call_args.kwargs["cwd"], os.path.dirname(os.path.abspath(adb_exe)))
 
 
 if __name__ == "__main__":

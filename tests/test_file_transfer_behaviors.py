@@ -40,6 +40,21 @@ class _Dummy(metaclass=_DummyMeta):
     def __int__(self):
         return 0
 
+    def __index__(self):
+        return 0
+
+    def __ge__(self, other):
+        return False
+
+    def __le__(self, other):
+        return False
+
+    def __gt__(self, other):
+        return False
+
+    def __lt__(self, other):
+        return False
+
 
 class QObject:
     def __init__(self, *args, **kwargs):
