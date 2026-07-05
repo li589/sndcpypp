@@ -736,7 +736,7 @@ class RouteServiceTests(unittest.TestCase):
         ):
             service.start_video_route("device-1")
 
-        self.assertEqual(popen_kwargs[0]["env"]["ADB"], r"D:\tools\adb\adb.exe")
+        self.assertEqual(popen_kwargs[0]["env"]["ADB"], _FakeCommandManager()._values["adb_path"])
 
     def test_start_video_route_cleans_stale_scrcpy_binary_before_spawn(self):
         registry = ProcessRegistry()
@@ -772,14 +772,14 @@ class RouteServiceTests(unittest.TestCase):
         ):
             service.start_video_route("device-1")
 
-        self.assertEqual(cleaned, [r"D:\tools\scrcpy\scrcpy.exe"])
+        self.assertEqual(cleaned, [_FakeCommandManager()._values["scrcpy_path"]])
 
     def test_cleanup_stale_scrcpy_processes_does_not_scan_or_kill_untracked_processes(self):
         registry = ProcessRegistry()
         service = self._build_service(registry, [])
 
         with patch("app.services.route_service.subprocess.run") as run_mock:
-            killed = service._cleanup_stale_scrcpy_processes(r"D:\tools\scrcpy\scrcpy.exe")
+            killed = service._cleanup_stale_scrcpy_processes(_FakeCommandManager()._values["scrcpy_path"])
 
         self.assertEqual(killed, [])
         run_mock.assert_not_called()
