@@ -394,7 +394,7 @@ class FileTransferCoordinatorTests(unittest.TestCase):
         scheduled[0][1]()
         self.assertFalse(progress_bar.isVisible())
 
-    def test_handle_file_progress_error_sets_full_value_without_refresh(self):
+    def test_handle_file_progress_error_preserves_failure_percent_without_refresh(self):
         progress_bar = QProgressBar()
         progress_bar.setRange(0, 100)
         progress_bar.setValue(30)
@@ -418,7 +418,7 @@ class FileTransferCoordinatorTests(unittest.TestCase):
                 on_refresh=lambda: refresh_calls.append(1),
             )
 
-        self.assertEqual(progress_bar.value(), 100)
+        self.assertEqual(progress_bar.value(), 0)
         self.assertEqual(refresh_calls, [])
 
     def test_update_file_table_success_populates_and_sets_path(self):

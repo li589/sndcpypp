@@ -56,11 +56,14 @@ def handle_file_progress(
         progress_bar.setValue(0)
     elif status == "progress":
         progress_bar.setValue(percent)
-    elif status in ["done", "error"]:
+    elif status == "done":
         progress_bar.setValue(100)
         QTimer.singleShot(1500, lambda: progress_bar.setVisible(False))
-        if status == "done" and should_refresh and on_refresh is not None:
+        if should_refresh and on_refresh is not None:
             QTimer.singleShot(500, on_refresh)
+    elif status == "error":
+        progress_bar.setValue(percent)
+        QTimer.singleShot(1500, lambda: progress_bar.setVisible(False))
 
 
 def update_file_table(

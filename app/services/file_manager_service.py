@@ -122,7 +122,8 @@ class FileManagerService(QObject):
         self._symlink_workers: dict[str, _SymlinkResolverWorker] = {}
         self._symlink_request_tokens: dict[str, int] = {}
         self._adb_lock = threading.Lock()
-        self._transfer_lock = threading.Lock()
+        self._transfer_locks_lock = threading.Lock()
+        self._transfer_locks: dict[str, threading.Lock] = {}
 
     def list_device_files(self, device_serial: str, path: str) -> None:
         def _list():
@@ -413,6 +414,10 @@ class FileManagerService(QObject):
             if not drained_any:
                 time.sleep(poll_interval)
 
+    def _get_transfer_lock(self, device_serial: str) -> threading.Lock:
+        with self._transfer_locks_lock:
+            return self._transfer_locks.setdefault(device_serial, threading.Lock())
+
     def _run_transfer_with_progress(
         self,
         device_serial: str,
@@ -423,9 +428,9 @@ class FileManagerService(QObject):
         remote_path: str = "",
         emit_done: bool = True,
     ) -> bool:
-        self.file_transfer_progress.emit("start", device_serial, transfer_kind, remote_path, f"正在{desc}...", 0)
         try:
-            with self._transfer_lock:
+            with self._get_transfer_lock(device_serial):
+                self.file_transfer_progress.emit("start", device_serial, transfer_kind, remote_path, f"正在{desc}...", 0)
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 proc = subprocess.Popen(
                     cmd,

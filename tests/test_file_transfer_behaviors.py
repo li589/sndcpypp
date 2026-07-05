@@ -272,6 +272,68 @@ class FileTransferBehaviorTests(unittest.TestCase):
             ],
         )
 
+    def test_transfer_locks_are_scoped_by_device(self):
+        service = FileManagerService(
+            cmd_manager=_FakeCommandManager(),
+            ls_parser=None,
+            transfer_progress_parser=None,
+            process_registry=ProcessRegistry(),
+            process_supervisor=ProcessSupervisor(ProcessRegistry()),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: None,
+            is_running=lambda: True,
+        )
+
+        self.assertIs(service._get_transfer_lock("device-1"), service._get_transfer_lock("device-1"))
+        self.assertIsNot(service._get_transfer_lock("device-1"), service._get_transfer_lock("device-2"))
+
+    def test_transfer_start_event_waits_until_device_lock_is_acquired(self):
+        registry = ProcessRegistry()
+        service = FileManagerService(
+            cmd_manager=_FakeCommandManager(),
+            ls_parser=None,
+            transfer_progress_parser=None,
+            process_registry=registry,
+            process_supervisor=ProcessSupervisor(registry),
+            task_runner=_ImmediateTaskRunner(),
+            run_adb_command=lambda cmd, desc: None,
+            is_running=lambda: True,
+        )
+        statuses: list[str] = []
+        start_seen = threading.Event()
+
+        def _emit(status, device_serial, transfer_kind, remote_path, message, percent):
+            del device_serial, transfer_kind, remote_path, message, percent
+            statuses.append(status)
+            if status == "start":
+                start_seen.set()
+
+        service.file_transfer_progress = SimpleNamespace(emit=_emit)
+        lock = service._get_transfer_lock("device-1")
+        lock.acquire()
+
+        def _run_locked_transfer():
+            with patch("app.services.file_manager_service.subprocess.Popen", return_value=_TransferProc(0, [])):
+                service._run_transfer_with_progress(
+                    "device-1",
+                    ["push_file_cmd"],
+                    "上传 demo.txt",
+                    transfer_kind="push",
+                    remote_path="/sdcard/",
+                )
+
+        worker = threading.Thread(target=_run_locked_transfer)
+        worker.start()
+        try:
+            self.assertFalse(start_seen.wait(0.1))
+        finally:
+            lock.release()
+        worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        self.assertIn("start", statuses)
+        self.assertIn("done", statuses)
+
     def test_pull_file_reports_error_when_final_move_fails(self):
         registry = ProcessRegistry()
         service = FileManagerService(
