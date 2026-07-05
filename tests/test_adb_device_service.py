@@ -1,4 +1,6 @@
 import unittest
+import os
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -139,6 +141,46 @@ class ADBDeviceServiceTests(unittest.TestCase):
         self.assertEqual(validation_results, [[1, 1, 0]])
         self.assertEqual(cmd_manager.get_variable("scrcpy_path"), "")
         self.assertEqual(cmd_manager.get_variable("apk_path"), "")
+
+    def test_validate_paths_resolves_platform_tools_scrcpy_and_vendor_apk(self):
+        task_runner = _QueuedTaskRunner()
+        validation_results: list[list[int]] = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            vendor_dir = os.path.join(temp_dir, "vendor")
+            platform_dir = os.path.join(vendor_dir, "windows")
+            platform_tools_dir = os.path.join(platform_dir, "platform-tools")
+            os.makedirs(platform_tools_dir)
+            ext = ".exe" if os.name == "nt" else ""
+            scrcpy_path = os.path.join(platform_tools_dir, f"scrcpy{ext}")
+            apk_path = os.path.join(vendor_dir, "sndcpy.apk")
+            for path in (scrcpy_path, apk_path):
+                with open(path, "w", encoding="utf-8") as file_obj:
+                    file_obj.write("")
+            cmd_manager = _FakeCommandManager(
+                values={
+                    "adb_path": "adb.exe",
+                    "player_path": "player.exe",
+                    "sndcpy_dir": platform_dir,
+                }
+            )
+            service = ADBDeviceService(
+                cmd_manager=cmd_manager,
+                run_adb_command=lambda cmd, desc: None,
+                task_runner=task_runner,
+                project_root=temp_dir,
+            )
+            service.validation_result.connect(lambda results: validation_results.append(results))
+
+            with patch("app.services.adb_device_service.os.access", return_value=True), patch(
+                "app.services.adb_device_service.shutil.which",
+                side_effect=lambda path: path if path in {"adb.exe", "player.exe"} else None,
+            ):
+                service.validate_paths()
+                task_runner.tasks.pop(0)()
+
+        self.assertEqual(validation_results, [[1, 1, 1]])
+        self.assertEqual(cmd_manager.get_variable("scrcpy_path"), os.path.abspath(scrcpy_path))
+        self.assertEqual(cmd_manager.get_variable("apk_path"), os.path.abspath(apk_path))
 
     def test_install_apk_retries_when_install_failure_is_reported_in_stderr(self):
         task_runner = _QueuedTaskRunner()

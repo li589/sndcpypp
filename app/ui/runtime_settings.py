@@ -11,7 +11,15 @@ from app.infrastructure.adb.path_resolver import ResolvedADBPath, get_platform_v
 def get_audio_router_candidate_paths(app_base_dir: str) -> list[str]:
     ext = ".exe" if os.name == "nt" else ""
     repo_root = os.path.abspath(app_base_dir)
+    platform_subdir = get_platform_vendor_subdir()
+    ci_artifact_name = {
+        "windows": "AudioRouter-windows-x64.exe",
+        "macos": "AudioRouter-macos-universal",
+        "linux": "AudioRouter-linux-x64",
+    }.get(platform_subdir, f"AudioRouter{ext}")
     candidates = [
+        os.path.join(repo_root, "vendor", platform_subdir, f"AudioRouter{ext}"),
+        os.path.join(repo_root, "vendor", platform_subdir, ci_artifact_name),
         os.path.join(repo_root, "AudioRouter", f"AudioRouter{ext}"),
         os.path.join(repo_root, "AudioRouter", "build", f"AudioRouter{ext}"),
         os.path.join(repo_root, "AudioRouter", "build", "Release", f"AudioRouter{ext}"),
@@ -34,7 +42,7 @@ def is_audio_router_path(player_path: str) -> bool:
     if not player_path:
         return False
     basename = os.path.basename(player_path).lower()
-    return basename == "audiorouter" or basename == "audiorouter.exe"
+    return basename == "audiorouter" or basename == "audiorouter.exe" or basename.startswith("audiorouter-")
 
 
 def get_default_player_path(app_base_dir: str) -> str:

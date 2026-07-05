@@ -33,6 +33,21 @@ def resolve_apk_path(sndcpy_dir: str, project_root: str) -> str:
     return os.path.abspath(os.path.join(project_root, "vendor", "sndcpy.apk"))
 
 
+def resolve_vendor_tool_path(base_dir: str, tool_name: str, *, executable_ext: str | None = None) -> str:
+    ext = executable_ext if executable_ext is not None else (".exe" if os.name == "nt" else "")
+    candidates = [
+        os.path.join(base_dir, f"{tool_name}{ext}"),
+        os.path.join(base_dir, "platform-tools", f"{tool_name}{ext}"),
+    ]
+    if ext:
+        candidates.append(os.path.join(base_dir, tool_name))
+        candidates.append(os.path.join(base_dir, "platform-tools", tool_name))
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return os.path.abspath(candidates[0])
+
+
 class ADBPathResolver:
     def __init__(self, project_root: str):
         self._project_root = os.path.abspath(project_root)
@@ -101,7 +116,7 @@ class ADBPathResolver:
         candidate_dir = (sndcpy_dir or "").strip()
         if not candidate_dir:
             candidate_dir = os.path.join(self._project_root, "vendor", get_platform_vendor_subdir())
-        return os.path.abspath(os.path.join(candidate_dir, f"adb{self._ext}"))
+        return resolve_vendor_tool_path(candidate_dir, "adb", executable_ext=self._ext)
 
     def _resolve_existing_path(self, raw_path: str) -> str:
         if not raw_path:

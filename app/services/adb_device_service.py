@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from app.infrastructure.config.logging_config import get_logger
-from app.infrastructure.adb.path_resolver import resolve_apk_path
+from app.infrastructure.adb.path_resolver import resolve_apk_path, resolve_vendor_tool_path
 
 logger = get_logger(__name__)
 
@@ -22,11 +22,18 @@ class ADBDeviceService(QObject):
     validation_result = pyqtSignal(list)
     log_message = pyqtSignal(str, str)
 
-    def __init__(self, cmd_manager, run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]], task_runner):
+    def __init__(
+        self,
+        cmd_manager,
+        run_adb_command: Callable[[list[str], str], Optional[subprocess.CompletedProcess]],
+        task_runner,
+        project_root: str | None = None,
+    ):
         super().__init__()
         self._cmd_manager = cmd_manager
         self._run_adb_command = run_adb_command
         self._task_runner = task_runner
+        self._project_root = os.path.abspath(project_root or ".")
         self._is_refreshing = False
         self._refresh_pending = False
         self._last_device_snapshot: tuple[str, ...] | None = None
@@ -65,8 +72,8 @@ class ADBDeviceService(QObject):
             self._clear_runtime_paths()
             if sndcpy_dir and os.path.isdir(sndcpy_dir):
                 ext = ".exe" if os.name == "nt" else ""
-                scrcpy_path = os.path.join(sndcpy_dir, f"scrcpy{ext}")
-                apk_path = resolve_apk_path(sndcpy_dir, os.path.abspath("."))
+                scrcpy_path = resolve_vendor_tool_path(sndcpy_dir, "scrcpy", executable_ext=ext)
+                apk_path = resolve_apk_path(sndcpy_dir, self._resolve_project_root_for_vendor(sndcpy_dir))
                 if is_exe(scrcpy_path) and os.path.isfile(apk_path):
                     results[2] = 1
                     self._cmd_manager.update_variable("scrcpy_path", scrcpy_path)
@@ -79,6 +86,13 @@ class ADBDeviceService(QObject):
             self.validation_result.emit(results)
 
         self._task_runner.start(name="adb-validate-paths", group="adb", target=_validate)
+
+    def _resolve_project_root_for_vendor(self, sndcpy_dir: str) -> str:
+        platform_dir = os.path.abspath(sndcpy_dir or "")
+        vendor_dir = os.path.dirname(platform_dir)
+        if os.path.basename(vendor_dir).lower() == "vendor":
+            return os.path.dirname(vendor_dir)
+        return self._project_root
 
     def refresh_devices(self) -> None:
         if self._is_refreshing:

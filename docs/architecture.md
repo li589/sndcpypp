@@ -120,9 +120,9 @@ core.py
 ```text
 vendor/
 ├── sndcpy.apk              # 平台无关，从 rom1v/sndcpy release 下载
-├── windows/                # adb.exe / scrcpy.exe / *.dll
-├── macos/                  # adb / scrcpy
-└── linux/                  # adb / scrcpy
+├── windows/                # adb.exe / scrcpy.exe / *.dll / AudioRouter*.exe
+├── macos/                  # adb / scrcpy / AudioRouter*
+└── linux/                  # adb / scrcpy / AudioRouter*
 ```
 
 平台分流入口：
@@ -131,6 +131,8 @@ vendor/
 - `app/ui/runtime_settings.py::get_default_sndcpy_dir()` —— 返回 `vendor/<platform>` 绝对路径
 - `app/ui/runtime_settings.py::get_default_apk_path()` —— 返回 `vendor/sndcpy.apk`
 - `app/infrastructure/adb/path_resolver.py::resolve_apk_path()` —— 优先用户 `sndcpy_dir/sndcpy.apk`，回退到 `vendor/sndcpy.apk`
+- `app/infrastructure/adb/path_resolver.py::resolve_vendor_tool_path()` —— 在 `vendor/<platform>/` 与 `vendor/<platform>/platform-tools/` 中查找 `adb` / `scrcpy`
+- `app/ui/runtime_settings.py::get_audio_router_candidate_paths()` —— 优先查找 `vendor/<platform>/AudioRouter*`，再回退到本地 CMake 构建目录
 
 平台分支约定（已有 30+ 处）：
 

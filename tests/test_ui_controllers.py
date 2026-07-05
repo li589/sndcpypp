@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 from app.ui.device_page_controller import DevicePageController
 from app.ui.device_runtime_coordinator import apply_validation_result_ui
 from app.ui.device_service_coordinator import finalize_operation_ui, submit_adb_service_action
-from app.infrastructure.adb.path_resolver import ADBPathResolver
+from app.infrastructure.adb.path_resolver import ADBPathResolver, get_platform_vendor_subdir, resolve_vendor_tool_path
 from app.ui.file_page_controller import FilePageController
 from app.ui.popup_manager import PopupManager
 from app.ui.runtime_settings import (
@@ -383,6 +383,27 @@ class RuntimeSettingsTests(unittest.TestCase):
 
 
 class ADBPathResolverTests(unittest.TestCase):
+    def test_bundled_adb_path_accepts_platform_tools_subdirectory(self):
+        ext = ".exe" if os.name == "nt" else ""
+        path = os.path.join("D:/App", "vendor", get_platform_vendor_subdir(), "platform-tools", f"adb{ext}")
+
+        with patch("app.infrastructure.adb.path_resolver.os.path.isfile", side_effect=lambda candidate: os.path.normcase(candidate) == os.path.normcase(path)):
+            resolved = resolve_vendor_tool_path(os.path.join("D:/App", "vendor", get_platform_vendor_subdir()), "adb")
+
+        self.assertEqual(resolved, os.path.abspath(path))
+
+    def test_audio_router_candidates_include_vendor_ci_artifact_name(self):
+        platform_subdir = get_platform_vendor_subdir()
+        expected_name = {
+            "windows": "AudioRouter-windows-x64.exe",
+            "macos": "AudioRouter-macos-universal",
+            "linux": "AudioRouter-linux-x64",
+        }[platform_subdir]
+
+        candidates = get_audio_router_candidate_paths("D:/App")
+
+        self.assertIn(os.path.abspath(os.path.join("D:/App", "vendor", platform_subdir, expected_name)), candidates)
+
     def test_negative_viability_result_is_not_cached(self):
         resolver = ADBPathResolver("D:/App")
 
