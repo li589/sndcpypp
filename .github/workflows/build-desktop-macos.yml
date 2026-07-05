@@ -32,16 +32,16 @@ jobs:
       - name: Convert icon to .icns
         run: |
           mkdir -p logo/logo.iconset
-          sips -z 1024 1024 "logo/logo (3).ico" --out logo/logo.iconset/icon_512x512@2x.png
-          sips -z 512 512 "logo/logo (3).ico" --out logo/logo.iconset/icon_512x512.png
-          sips -z 256 256 "logo/logo (3).ico" --out logo/logo.iconset/icon_256x256@2x.png
-          sips -z 256 256 "logo/logo (3).ico" --out logo/logo.iconset/icon_256x256.png
-          sips -z 128 128 "logo/logo (3).ico" --out logo/logo.iconset/icon_128x128@2x.png
-          sips -z 128 128 "logo/logo (3).ico" --out logo/logo.iconset/icon_128x128.png
-          sips -z 64 64 "logo/logo (3).ico" --out logo/logo.iconset/icon_32x32@2x.png
-          sips -z 32 32 "logo/logo (3).ico" --out logo/logo.iconset/icon_32x32.png
-          sips -z 32 32 "logo/logo (3).ico" --out logo/logo.iconset/icon_16x16@2x.png
-          sips -z 16 16 "logo/logo (3).ico" --out logo/logo.iconset/icon_16x16.png
+          sips -z 1024 1024 "logo/logo (3).png" --out logo/logo.iconset/icon_512x512@2x.png
+          sips -z 512 512 "logo/logo (3).png" --out logo/logo.iconset/icon_512x512.png
+          sips -z 256 256 "logo/logo (3).png" --out logo/logo.iconset/icon_256x256@2x.png
+          sips -z 256 256 "logo/logo (3).png" --out logo/logo.iconset/icon_256x256.png
+          sips -z 128 128 "logo/logo (3).png" --out logo/logo.iconset/icon_128x128@2x.png
+          sips -z 128 128 "logo/logo (3).png" --out logo/logo.iconset/icon_128x128.png
+          sips -z 64 64 "logo/logo (3).png" --out logo/logo.iconset/icon_32x32@2x.png
+          sips -z 32 32 "logo/logo (3).png" --out logo/logo.iconset/icon_32x32.png
+          sips -z 32 32 "logo/logo (3).png" --out logo/logo.iconset/icon_16x16@2x.png
+          sips -z 16 16 "logo/logo (3).png" --out logo/logo.iconset/icon_16x16.png
           iconutil -c icns logo/logo.iconset -o logo/logo.icns
           ls -la logo/logo.icns
 
