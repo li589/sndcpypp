@@ -9,6 +9,12 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from app.domain.models.operation_requests import RecordingState, RecordingStateEvent
 from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.infrastructure.config.logging_config import get_logger
+from app.infrastructure.process.process_waiter import wait_for_process_exit
+from app.ui.message_templates import (
+    log_pause_audio_route_before_recording,
+    log_recording_ended_restoring_audio,
+    log_recording_finished_awaiting_mux,
+)
 
 logger = get_logger(__name__)
 
@@ -46,30 +52,13 @@ class RecordingService(QObject):
         shutdown_grace_seconds: float = 3.0,
         on_shutdown_timeout: Callable[[], None] | None = None,
     ) -> int | None:
-        while True:
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            if not self._is_running():
-                break
-            time.sleep(poll_interval)
-
-        grace_checks = max(1, int(shutdown_grace_seconds / poll_interval))
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-
-        if on_shutdown_timeout is not None:
-            on_shutdown_timeout()
-
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-        return proc.poll()
+        return wait_for_process_exit(
+            proc,
+            is_running=self._is_running,
+            poll_interval=poll_interval,
+            shutdown_grace_seconds=shutdown_grace_seconds,
+            on_shutdown_timeout=on_shutdown_timeout,
+        )
 
     def _mark_intentional_record_stop(self, device_serial: str) -> None:
         reg = self._process_registry.ensure(device_serial)
@@ -137,7 +126,7 @@ class RecordingService(QObject):
                         audio_procs = list(reg.get("audio", []))
                     if any(proc.poll() is None for proc in audio_procs):
                         audio_was_running = True
-                        self.log_message.emit("检测到音频路由正在运行，为避免冲突将先暂停...", "warning")
+                        self.log_message.emit(log_pause_audio_route_before_recording(), "warning")
                         self._stop_audio(device_serial)
                         time.sleep(1)
 
@@ -174,7 +163,7 @@ class RecordingService(QObject):
                                 RecordingStateEvent(RecordingState.FAILED, device_serial, error_text)
                             )
                         if audio_was_running and self._is_running() and not was_intentionally_stopped:
-                            self.log_message.emit("录制已结束，正在尝试恢复之前的音频路由...", "info")
+                            self.log_message.emit(log_recording_ended_restoring_audio(), "info")
                             self._start_audio_route(device_serial, port=DEFAULT_AUDIO_PORT)
 
                     self._task_runner.start(
@@ -203,7 +192,7 @@ class RecordingService(QObject):
                 with self._process_registry.ensure(device_serial)["lock"]:
                     self._mark_intentional_record_stop(device_serial)
                     self._process_supervisor.kill_group(device_serial, "record")
-            self.log_message.emit("录制已结束保存 (等待后台封包完成)", "success")
+            self.log_message.emit(log_recording_finished_awaiting_mux(), "success")
 
         self._task_runner.start(name="record-stop", group="recording", target=_stop_rec_thread)
 

@@ -25,7 +25,7 @@ from app.services.debug_command_service import DebugCommandService
 from app.services.file_manager_service import FileManagerService
 from app.services.recording_service import RecordingService
 from app.services.route_service import RouteService
-from app.ui.message_templates import log_background_task_failed
+from app.ui.message_templates import log_adb_controller_safely_stopped, log_background_task_failed
 
 ADBCommand = ADBCommandBuilder
 
@@ -140,7 +140,7 @@ class CoreController(QObject):
         self.stop_streaming(None)
         self.stop_recording(None)
         self.stop_file_transfers(None)
-        self.log_message.emit("ADB控制器已安全停止", "info")
+        self.log_message.emit(log_adb_controller_safely_stopped(), "info")
 
     def wait_for_background_tasks(self, timeout: float | None = None) -> bool:
         return self._task_runner.wait_all(timeout=timeout)

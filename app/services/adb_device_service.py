@@ -9,6 +9,22 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.infrastructure.adb.path_resolver import resolve_apk_path, resolve_vendor_tool_path
 from app.infrastructure.config.logging_config import get_logger
+from app.ui.message_templates import (
+    log_adb_cleanup_completed,
+    log_adb_just_started_retrying,
+    log_adb_restart_submitted_restarting,
+    log_awaiting_install_confirmation,
+    log_device_enumeration_no_devices,
+    log_device_refresh_failed_ignored,
+    log_device_refresh_failed_retrying,
+    log_force_killing_adb_processes,
+    log_kill_adb_access_denied,
+    log_retry_install_after_uninstall,
+    log_sndcpy_already_installed_skipped,
+    log_sndcpy_not_found_in_dir,
+    log_starting_adb_server,
+    log_vendor_dir_invalid,
+)
 
 logger = get_logger(__name__)
 
@@ -78,9 +94,9 @@ class ADBDeviceService(QObject):
                     self._cmd_manager.update_variable("scrcpy_path", scrcpy_path)
                     self._cmd_manager.update_variable("apk_path", apk_path)
                 else:
-                    self.log_message.emit("在目录中未找到 sndcpy.apk 或 scrcpy 核心文件", "error")
+                    self.log_message.emit(log_sndcpy_not_found_in_dir(), "error")
             else:
-                self.log_message.emit("vendor 目录无效", "error")
+                self.log_message.emit(log_vendor_dir_invalid(), "error")
 
             self.validation_result.emit(results)
 
@@ -104,11 +120,11 @@ class ADBDeviceService(QObject):
                 cmd = self._cmd_manager.get_target_cmd("refresh_devices_cmd")
                 result = self._run_adb_command(cmd, "刷新设备列表")
                 if result is None or result.returncode != 0:
-                    self.log_message.emit("设备刷新失败，等待后直接重试设备枚举...", "warning")
+                    self.log_message.emit(log_device_refresh_failed_retrying(), "warning")
                     time.sleep(1.5)
                     result = self._run_adb_command(cmd, "重试刷新设备列表")
                 if result is None or result.returncode != 0:
-                    self.log_message.emit("设备刷新失败，本次结果已忽略。", "error")
+                    self.log_message.emit(log_device_refresh_failed_ignored(), "error")
                     return
                 devices = [
                     line.split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip() and "device" in line
@@ -117,7 +133,7 @@ class ADBDeviceService(QObject):
                 if not devices and (
                     "daemon started successfully" in stderr_text or "daemon not running" in stderr_text
                 ):
-                    self.log_message.emit("ADB 刚启动完成，等待设备枚举后自动重试...", "warning")
+                    self.log_message.emit(log_adb_just_started_retrying(), "warning")
                     for retry_index in range(2):
                         time.sleep(1.0)
                         result = self._run_adb_command(cmd, f"延迟重试刷新设备列表 #{retry_index + 1}")
@@ -176,7 +192,7 @@ class ADBDeviceService(QObject):
                         },
                     )
                     # #endregion
-                    self.log_message.emit("尝试卸载旧版本并重新安装...", "warning")
+                    self.log_message.emit(log_retry_install_after_uninstall(), "warning")
                     self._run_adb_command(
                         self._cmd_manager.get_target_cmd("uninstall_apk_cmd", device_serial=device_serial), "卸载旧版本"
                     )
@@ -188,9 +204,9 @@ class ADBDeviceService(QObject):
                 if not success and self._install_indicates_existing_package(res):
                     success = was_installed_before or self._is_sndcpy_installed(device_serial)
                     if success:
-                        self.log_message.emit("设备中已存在 sndcpy，跳过重复安装。", "info")
+                        self.log_message.emit(log_sndcpy_already_installed_skipped(), "info")
                 if not success and not was_installed_before and self._should_wait_for_install_confirmation(res):
-                    self.log_message.emit("安装结果尚未明确，正在等待手机端确认安装...", "info")
+                    self.log_message.emit(log_awaiting_install_confirmation(), "info")
                     success = self._wait_for_sndcpy_install(device_serial)
                 # #region debug-point B:install-finished
                 _report_debug_event(
@@ -217,7 +233,7 @@ class ADBDeviceService(QObject):
 
     def force_kill_adb(self) -> None:
         def _kill():
-            self.log_message.emit("正在强制结束 ADB 进程池...", "warning")
+            self.log_message.emit(log_force_killing_adb_processes(), "warning")
             try:
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 if os.name == "nt":
@@ -235,9 +251,9 @@ class ADBDeviceService(QObject):
                     )
 
                 if "拒绝访问" in res.stderr or "Access is denied" in res.stderr:
-                    self.log_message.emit("结束失败：拒绝访问！请【以管理员身份运行本程序】。", "error")
+                    self.log_message.emit(log_kill_adb_access_denied(), "error")
                 else:
-                    self.log_message.emit("ADB 进程清理指令执行完毕。", "success")
+                    self.log_message.emit(log_adb_cleanup_completed(), "success")
             except Exception as exc:
                 self.log_message.emit(f"强杀过程异常: {exc!s}", "error")
 
@@ -245,7 +261,7 @@ class ADBDeviceService(QObject):
 
     def start_adb_server(self) -> None:
         def _start():
-            self.log_message.emit("正在唤起 ADB 并枚举设备...", "info")
+            self.log_message.emit(log_starting_adb_server(), "info")
             self.refresh_devices()
 
         self._task_runner.start(name="adb-start-server", group="adb", target=_start)
@@ -254,7 +270,7 @@ class ADBDeviceService(QObject):
         def _restart():
             self._run_adb_command(self._cmd_manager.get_target_cmd("restart_adb_kill_cmd"), "杀掉ADB")
             time.sleep(1.0)
-            self.log_message.emit("ADB服务重启指令已发送，正在重新枚举设备", "success")
+            self.log_message.emit(log_adb_restart_submitted_restarting(), "success")
             self.refresh_devices()
 
         self._task_runner.start(name="adb-restart-server", group="adb", target=_restart)
@@ -268,7 +284,7 @@ class ADBDeviceService(QObject):
         if devices:
             self.log_message.emit(f"设备枚举完成: 检测到 {len(devices)} 台在线设备", "success")
         else:
-            self.log_message.emit("设备枚举完成: 当前没有在线设备", "info")
+            self.log_message.emit(log_device_enumeration_no_devices(), "info")
 
     def _clear_runtime_paths(self) -> None:
         self._cmd_manager.update_variable("scrcpy_path", "")

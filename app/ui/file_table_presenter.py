@@ -2,7 +2,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from app.domain.enums.file_type import FileType
-from app.ui.message_templates import file_list_summary, symlink_target_display, symlink_type_text
+from app.ui.message_templates import (
+    file_list_summary,
+    root_owned_tooltip_text,
+    symlink_target_display,
+    symlink_type_text,
+)
 from app.ui.widgets import FileTableWidgetItem
 
 
@@ -49,7 +54,7 @@ def populate_file_table(file_table, file_status_label, file_list: list) -> None:
         owner_item = FileTableWidgetItem(fi.owner, (0 if fi.is_root_owned else 1, fi.owner))
         if fi.is_root_owned:
             owner_item.setForeground(QColor(255, 85, 85))
-            owner_item.setToolTip("Root 所有 - 跨界操作可能受限")
+            owner_item.setToolTip(root_owned_tooltip_text())
         file_table.setItem(row, 4, owner_item)
 
         file_table.setItem(row, 5, FileTableWidgetItem(fi.date_str, (0, fi.date_str)))

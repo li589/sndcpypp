@@ -1,6 +1,19 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from PyQt6.QtCore import QCoreApplication
+
+
+def tr(text: str, context: str = "messages") -> str:
+    """i18n 辅助函数：包装 QCoreApplication.translate()。
+
+    pylupdate6 不会提取通过自定义函数调用的字符串，因此本函数仅用于
+    在运行时查找翻译。.ts 文件需通过 pylupdate6 扫描源码中的
+    QCoreApplication.translate() 调用生成。
+    """
+    return QCoreApplication.translate(context, text)
+
+
 FILE_MENU_ENTER_FOLDER = "📂 进入文件夹"
 FILE_MENU_DOWNLOAD_FOLDER = "⬇️ 下载整个文件夹"
 FILE_MENU_DOWNLOAD_FILE = "⬇️ 下载文件"
@@ -328,3 +341,133 @@ def file_conflict_dialog_title(is_upload: bool) -> str:
 
 def file_conflict_dialog_message(filename: str) -> str:
     return f"<b>目标位置已存在同名项目：</b><br><br>{filename}<br><br>请选择操作："
+
+
+# --- adb_device_service log messages ---
+def log_sndcpy_not_found_in_dir() -> str:
+    return tr("在目录中未找到 sndcpy.apk 或 scrcpy 核心文件")
+
+
+def log_vendor_dir_invalid() -> str:
+    return tr("vendor 目录无效")
+
+
+def log_device_refresh_failed_retrying() -> str:
+    return tr("设备刷新失败，等待后直接重试设备枚举...")
+
+
+def log_device_refresh_failed_ignored() -> str:
+    return tr("设备刷新失败，本次结果已忽略。")
+
+
+def log_adb_just_started_retrying() -> str:
+    return tr("ADB 刚启动完成，等待设备枚举后自动重试...")
+
+
+def log_retry_install_after_uninstall() -> str:
+    return tr("尝试卸载旧版本并重新安装...")
+
+
+def log_sndcpy_already_installed_skipped() -> str:
+    return tr("设备中已存在 sndcpy，跳过重复安装。")
+
+
+def log_awaiting_install_confirmation() -> str:
+    return tr("安装结果尚未明确，正在等待手机端确认安装...")
+
+
+def log_force_killing_adb_processes() -> str:
+    return tr("正在强制结束 ADB 进程池...")
+
+
+def log_kill_adb_access_denied() -> str:
+    return tr("结束失败：拒绝访问！请【以管理员身份运行本程序】。")
+
+
+def log_adb_cleanup_completed() -> str:
+    return tr("ADB 进程清理指令执行完毕。")
+
+
+def log_starting_adb_server() -> str:
+    return tr("正在唤起 ADB 并枚举设备...")
+
+
+def log_adb_restart_submitted_restarting() -> str:
+    return tr("ADB服务重启指令已发送，正在重新枚举设备")
+
+
+def log_device_enumeration_no_devices() -> str:
+    return tr("设备枚举完成: 当前没有在线设备")
+
+
+# --- route_service log messages ---
+def log_await_screen_capture_auth() -> str:
+    return tr("若手机弹出录屏授权，请先在手机上确认，画面窗口会在授权后出现。")
+
+
+def log_one_click_serial_video_first() -> str:
+    return tr("一键路由已切换为串行启动，正在优先建立画面链路。")
+
+
+def log_video_link_stable_starting_audio() -> str:
+    return tr("画面链路已稳定，开始建立音频链路。")
+
+
+def log_all_streams_force_stopped() -> str:
+    return tr("已彻底强制结束所有设备的流媒体路由")
+
+
+# --- recording_service log messages ---
+def log_pause_audio_route_before_recording() -> str:
+    return tr("检测到音频路由正在运行，为避免冲突将先暂停...")
+
+
+def log_recording_ended_restoring_audio() -> str:
+    return tr("录制已结束，正在尝试恢复之前的音频路由...")
+
+
+def log_recording_finished_awaiting_mux() -> str:
+    return tr("录制已结束保存 (等待后台封包完成)")
+
+
+# --- file_manager_service log messages ---
+def log_read_directory_failed() -> str:
+    return tr("读取目录失败 (可能无权限或路径错误)")
+
+
+# --- core.py log messages ---
+def log_adb_controller_safely_stopped() -> str:
+    return tr("ADB控制器已安全停止")
+
+
+# --- UI text ---
+def window_title_text() -> str:
+    return tr("Android音画路由控制中心")
+
+
+def root_owned_tooltip_text() -> str:
+    return tr("Root 所有 - 跨界操作可能受限")
+
+
+def audio_route_active_tooltip(active: bool) -> str:
+    return tr("音频路由中") if active else ""
+
+
+def video_route_active_tooltip(active: bool) -> str:
+    return tr("视频路由中") if active else ""
+
+
+def recording_active_tooltip(active: bool) -> str:
+    return tr("录制中") if active else ""
+
+
+def recording_bg_check_tooltip_text() -> str:
+    return tr("录制会始终复用后台模式；即使已打开 Scrcpy 路由窗口，也不会再为录制弹出新窗口。")
+
+
+def audio_bitrate_spinbox_tooltip_text() -> str:
+    return tr("当前 sndcpy + VLC 链路不支持在此调整音频比特率，该值不会生效。")
+
+
+def audio_bitrate_label_tooltip_text() -> str:
+    return tr("当前 sndcpy + VLC 链路不支持在此调整音频比特率。")

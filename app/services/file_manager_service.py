@@ -12,12 +12,14 @@ from collections.abc import Callable
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.infrastructure.config.logging_config import get_logger
+from app.infrastructure.process.process_waiter import wait_for_process_exit
 
 logger = get_logger(__name__)
 
 from app.domain.enums.file_type import FileType
 from app.infrastructure.fileops.ls_parser import LSAllParser
 from app.infrastructure.fileops.transfer_progress import TransferProgressParser
+from app.ui.message_templates import log_read_directory_failed
 
 
 def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
@@ -178,7 +180,7 @@ class FileManagerService(QObject):
 
                 self.files_listed.emit(path, file_list, True)
             else:
-                self.log_message.emit("读取目录失败 (可能无权限或路径错误)", "error")
+                self.log_message.emit(log_read_directory_failed(), "error")
                 self.files_listed.emit(path, [], False)
 
         self._task_runner.start(name="files-list-basic", group="files", target=_list)
@@ -268,7 +270,7 @@ class FileManagerService(QObject):
                     },
                 )
                 # #endregion
-                self.log_message.emit("读取目录失败 (可能无权限或路径错误)", "error")
+                self.log_message.emit(log_read_directory_failed(), "error")
                 self.files_listed_detailed.emit(path, [], False)
 
         self._task_runner.start(name="files-list-detailed", group="files", target=_list)
@@ -322,30 +324,13 @@ class FileManagerService(QObject):
         shutdown_grace_seconds: float = 3.0,
         on_shutdown_timeout: Callable[[], None] | None = None,
     ) -> int | None:
-        while True:
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            if not self._is_running():
-                break
-            time.sleep(poll_interval)
-
-        grace_checks = max(1, int(shutdown_grace_seconds / poll_interval))
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-
-        if on_shutdown_timeout is not None:
-            on_shutdown_timeout()
-
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-        return proc.poll()
+        return wait_for_process_exit(
+            proc,
+            is_running=self._is_running,
+            poll_interval=poll_interval,
+            shutdown_grace_seconds=shutdown_grace_seconds,
+            on_shutdown_timeout=on_shutdown_timeout,
+        )
 
     @staticmethod
     def _start_transfer_output_reader(proc) -> tuple[queue.Queue[str], threading.Event]:

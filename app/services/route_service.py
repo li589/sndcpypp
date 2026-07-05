@@ -11,6 +11,13 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from app.domain.models.operation_requests import RoutingRequest
 from app.infrastructure.config.constants import DEFAULT_AUDIO_PORT
 from app.infrastructure.config.logging_config import get_logger
+from app.infrastructure.process.process_waiter import wait_for_process_exit
+from app.ui.message_templates import (
+    log_all_streams_force_stopped,
+    log_await_screen_capture_auth,
+    log_one_click_serial_video_first,
+    log_video_link_stable_starting_audio,
+)
 
 logger = get_logger(__name__)
 
@@ -78,30 +85,13 @@ class RouteService(QObject):
         shutdown_grace_seconds: float = 3.0,
         on_shutdown_timeout: Callable[[], None] | None = None,
     ) -> int | None:
-        while True:
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            if not self._is_running():
-                break
-            time.sleep(poll_interval)
-
-        grace_checks = max(1, int(shutdown_grace_seconds / poll_interval))
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-
-        if on_shutdown_timeout is not None:
-            on_shutdown_timeout()
-
-        for _ in range(grace_checks):
-            return_code = proc.poll()
-            if return_code is not None:
-                return return_code
-            time.sleep(poll_interval)
-        return proc.poll()
+        return wait_for_process_exit(
+            proc,
+            is_running=self._is_running,
+            poll_interval=poll_interval,
+            shutdown_grace_seconds=shutdown_grace_seconds,
+            on_shutdown_timeout=on_shutdown_timeout,
+        )
 
     @staticmethod
     def _read_process_output(proc, timeout: float = 0.2) -> dict[str, str]:
@@ -629,7 +619,7 @@ class RouteService(QObject):
                         "initial_poll": proc.poll(),
                     },
                 )
-                self.log_message.emit("若手机弹出录屏授权，请先在手机上确认，画面窗口会在授权后出现。", "info")
+                self.log_message.emit(log_await_screen_capture_auth(), "info")
 
                 if not self._wait_until_process_ready(proc, seconds=2.5):
                     output = {
@@ -711,7 +701,7 @@ class RouteService(QObject):
 
     def _start_routing_session_task(self, request: RoutingRequest) -> None:
         if request.enable_audio and request.enable_video:
-            self.log_message.emit("一键路由已切换为串行启动，正在优先建立画面链路。", "info")
+            self.log_message.emit(log_one_click_serial_video_first(), "info")
         video_started = False
         if request.enable_video:
             video_started = self._start_video_route_task(
@@ -738,7 +728,7 @@ class RouteService(QObject):
                     )
                     return
                 if self._is_running():
-                    self.log_message.emit("画面链路已稳定，开始建立音频链路。", "info")
+                    self.log_message.emit(log_video_link_stable_starting_audio(), "info")
             self._start_audio_route_task(request.device_serial, port=request.audio_port)
 
     def start_routing_session(self, request: RoutingRequest) -> None:
@@ -809,7 +799,7 @@ class RouteService(QObject):
                     self._mark_intentional_video_stop(ds)
                     self._process_supervisor.kill_group(ds, "video")
                     self._stop_audio_internal(ds)
-                self.log_message.emit("已彻底强制结束所有设备的流媒体路由", "info")
+                self.log_message.emit(log_all_streams_force_stopped(), "info")
             else:
                 self._mark_intentional_video_stop(device_serial)
                 self._process_supervisor.kill_group(device_serial, "video")

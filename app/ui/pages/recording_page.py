@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.message_templates import recording_bg_check_tooltip_text
+
 
 class RecordingPage(QWidget):
     def __init__(self, on_browse_dir, on_start_recording, on_stop_recording, parent=None):
@@ -57,7 +59,7 @@ class RecordingPage(QWidget):
         self.rec_bg_check = QCheckBox("录制始终后台进行(不会新开窗口)")
         self.rec_bg_check.setChecked(True)
         self.rec_bg_check.setEnabled(False)
-        self.rec_bg_check.setToolTip("录制会始终复用后台模式；即使已打开 Scrcpy 路由窗口，也不会再为录制弹出新窗口。")
+        self.rec_bg_check.setToolTip(recording_bg_check_tooltip_text())
         rec_mode_lyt.addWidget(self.rec_video_check)
         rec_mode_lyt.addWidget(self.rec_audio_check)
         rec_mode_lyt.addWidget(self.rec_bg_check)

@@ -4,6 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QProgressBar, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
+from app.ui.message_templates import window_title_text
 from app.ui.pages.console_page import ConsolePage
 from app.ui.pages.device_page import DeviceControlPage
 from app.ui.pages.file_page import FileTransferPage
@@ -12,7 +13,7 @@ from app.ui.widgets import AutoExpandTextEdit, DragDropTableWidget, RefreshDevic
 
 
 def configure_main_window_shell(window) -> None:
-    window.setWindowTitle("Android音画路由控制中心")
+    window.setWindowTitle(window_title_text())
     window.setWindowIcon(QIcon(_resolve_logo_path(window)))
     window.setMinimumSize(540, 720)
 

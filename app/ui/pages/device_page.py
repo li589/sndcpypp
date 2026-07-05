@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.message_templates import audio_bitrate_label_tooltip_text, audio_bitrate_spinbox_tooltip_text
+
 
 class DeviceControlPage(QWidget):
     def __init__(
@@ -179,7 +181,7 @@ class DeviceControlPage(QWidget):
         self.audio_bitrate.setSuffix(" kbps")
         self.audio_bitrate.setFixedWidth(90)
         self.audio_bitrate.setEnabled(False)
-        self.audio_bitrate.setToolTip("当前 sndcpy + VLC 链路不支持在此调整音频比特率，该值不会生效。")
+        self.audio_bitrate.setToolTip(audio_bitrate_spinbox_tooltip_text())
         self.back_bitrate_default_btn = QPushButton("↺")
         self.back_bitrate_default_btn.setStyleSheet(compact_btn_style)
         self.back_bitrate_default_btn.clicked.connect(on_back_audio_bitrate_default)
@@ -192,7 +194,7 @@ class DeviceControlPage(QWidget):
 
         row4 = QHBoxLayout()
         bitrate_label = QLabel("音频比特(固定):")
-        bitrate_label.setToolTip("当前 sndcpy + VLC 链路不支持在此调整音频比特率。")
+        bitrate_label.setToolTip(audio_bitrate_label_tooltip_text())
         row4.addWidget(bitrate_label)
         row4.addWidget(self.audio_bitrate)
         row4.addWidget(self.back_bitrate_default_btn)

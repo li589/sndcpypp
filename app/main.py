@@ -9,7 +9,9 @@ class ApplicationEntry:
     def run(self) -> int:
         app = QApplication(sys.argv)
         app.setStyle("Fusion")
-        window = Bootstrapper().create_main_window()
+        bootstrapper = Bootstrapper()
+        bootstrapper.install_translators(app)
+        window = bootstrapper.create_main_window()
         window.show()
         return app.exec()
 

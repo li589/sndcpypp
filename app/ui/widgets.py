@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.message_templates import audio_route_active_tooltip, recording_active_tooltip, video_route_active_tooltip
+
 
 class FileTableWidgetItem(QTableWidgetItem):
     """自定义表格项，支持按类型和名称正确排序"""
@@ -233,11 +235,11 @@ class DeviceListItemWidget(QWidget):
 
     def update_status(self, audio: bool, video: bool, recording: bool) -> None:
         self.audio_label.setText("🎵" if audio else "")
-        self.audio_label.setToolTip("音频路由中" if audio else "")
+        self.audio_label.setToolTip(audio_route_active_tooltip(audio))
         self.video_label.setText("🎥" if video else "")
-        self.video_label.setToolTip("视频路由中" if video else "")
+        self.video_label.setToolTip(video_route_active_tooltip(video))
         self.record_label.setText("●" if recording else "")
         self.record_label.setStyleSheet(
             "background: transparent; color: #FF5555; font-weight: bold;" if recording else "background: transparent;"
         )
-        self.record_label.setToolTip("录制中" if recording else "")
+        self.record_label.setToolTip(recording_active_tooltip(recording))
