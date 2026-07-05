@@ -14,6 +14,15 @@ _platform_subdir = {
 _vendor_root = os.path.join(os.getcwd(), "vendor")
 _platform_vendor_dir = os.path.join(_vendor_root, _platform_subdir)
 
+# 平台感知图标：Windows 用 .ico，macOS 用 .icns（由 CI 转换），Linux 无图标
+_icon = []
+if sys.platform == 'win32':
+    _icon = ['logo/logo (3).ico']
+elif sys.platform == 'darwin':
+    _icns_path = 'logo/logo.icns'
+    if os.path.isfile(_icns_path):
+        _icon = [_icns_path]
+
 datas = []
 if os.path.isfile(os.path.join(_vendor_root, "sndcpy.apk")):
     datas.append((os.path.join(_vendor_root, "sndcpy.apk"), "vendor"))
@@ -57,5 +66,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['logo/logo (3).ico'],
+    icon=_icon,
 )
+
+# macOS: 生成 .app bundle 以获得原生应用体验
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        exe,
+        name='sndcpypp.app',
+        icon=_icon if _icon else None,
+    )

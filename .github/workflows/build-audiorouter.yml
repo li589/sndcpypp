@@ -97,4 +97,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          name: sndcpy++ ${{ github.ref_name }}
           generate_release_notes: true
