@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 提问与讨论
+    url: https://github.com/li589/sndcpypp/discussions
+    about: 使用问题、想法讨论请到 Discussions 区
+  - name: 🔒 安全漏洞报告
+    url: https://github.com/li589/sndcpypp/security/advisories/new
+    about: 安全漏洞请私密报告，不要在 Issue 中公开

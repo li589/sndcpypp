@@ -181,4 +181,19 @@ python -m app.main
 
 ## License
 
-待补充。
+本项目基于 [MIT License](LICENSE) 开源。
+
+vendor/ 目录下的外部二进制（sndcpy.apk、adb、scrcpy 等）遵循各自的许可证：
+
+- [sndcpy](https://github.com/rom1v/sndcpy) — Apache 2.0
+- [scrcpy](https://github.com/Genymobile/scrcpy) — Apache 2.0
+- [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools) — Apache 2.0
+
+## 贡献
+
+欢迎参与贡献！请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
+
+- 报告 Bug：使用 [Bug 报告模板](https://github.com/li589/sndcpypp/issues/new?template=bug_report.yml)
+- 功能建议：使用 [功能建议模板](https://github.com/li589/sndcpypp/issues/new?template=feature_request.yml)
+- 安全漏洞：请按 [安全策略](SECURITY.md) 私密报告
+- 版本变更记录：见 [CHANGELOG](CHANGELOG.md)
