@@ -1,9 +1,9 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
+from app.domain.enums.file_type import FileType
 from app.ui.message_templates import file_list_summary, symlink_target_display, symlink_type_text
 from app.ui.widgets import FileTableWidgetItem
-from core import FileType
 
 
 def populate_file_table(file_table, file_status_label, file_list: list) -> None:

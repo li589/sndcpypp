@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from app.domain.models.file_info import FileInfo
 from app.domain.models.operation_requests import RecordingStateEvent
 from app.infrastructure.adb.path_resolver import ADBPathResolver
 from app.infrastructure.config.settings_store import JsonSettingsStore, get_default_settings_path
@@ -91,7 +92,7 @@ from app.ui.core_lifecycle_coordinator import (
     resolve_and_prepare_paths,
     sync_core_runtime as coordinate_sync_core_runtime,
 )
-from core import CoreController, FileInfo
+from core import CoreController
 
 
 def _report_debug_event(hypothesis_id: str, location: str, msg: str, data: dict[str, Any] | None = None) -> None:
@@ -242,6 +243,7 @@ class SndcpyGUI(QMainWindow):
             log_to_console=self.log_to_console,
             last_adb_signature=self._last_adb_resolution_signature,
             settings=self.settings,
+            project_root=self.app_base_dir,
         )
 
     def resolve_runtime_paths(self):

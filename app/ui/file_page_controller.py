@@ -1,12 +1,12 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidgetItem
 
+from app.domain.enums.file_type import FileType
 from app.ui.file_actions import handle_download_request
 from app.ui.interaction_helpers import join_remote_path, parent_remote_path
 from app.ui.menu_builders import exec_file_table_context_menu
 from app.ui.menu_coordinator import handle_file_table_action
 from app.ui.message_templates import log_download_preparing, log_listing_path, log_symlink_unavailable
-from core import FileType
 
 
 class FilePageController:

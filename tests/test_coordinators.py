@@ -33,6 +33,7 @@ from app.ui.core_lifecycle_coordinator import (
     connect_core_signals,
     disconnect_core_signals,
     maybe_log_adb_resolution,
+    recreate_core_controller,
     sync_core_runtime,
 )
 from app.ui.device_service_coordinator import (
@@ -650,13 +651,14 @@ class CoreLifecycleCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(logs), 1)
 
     def test_maybe_log_adb_resolution_logs_builtin_with_info_level(self):
-        resolution = _make_adb_resolution(path="bundled/adb", source="内置 Sndcpy")
+        resolution = _make_adb_resolution(path="bundled/adb", source="内置 vendor")
         logs: list[tuple] = []
 
         maybe_log_adb_resolution(resolution, None, lambda msg, level: logs.append((msg, level)))
 
         self.assertEqual(logs[0][1], "info")
         self.assertIn("bundled/adb", logs[0][0])
+        self.assertIn("内置 vendor", logs[0][0])
 
     def test_maybe_log_adb_resolution_logs_fallback_with_warning(self):
         resolution = _make_adb_resolution(
@@ -775,6 +777,28 @@ class CoreLifecycleCoordinatorTests(unittest.TestCase):
         self.assertEqual(request.sndcpy_dir, "sndcpy-dir")
         self.assertEqual(request.adb_extra, "--a")
         self.assertIsNotNone(result)
+
+    def test_recreate_core_controller_passes_project_root_to_controller(self):
+        calls: list[tuple] = []
+
+        class _CreatedController(_FakeCoreController):
+            def __init__(self, adb_path, player_path, sndcpy_dir, project_root=None):
+                super().__init__()
+                calls.append((adb_path, player_path, sndcpy_dir, project_root))
+
+        with patch("app.ui.core_lifecycle_coordinator.CoreController", _CreatedController):
+            controller, _ = recreate_core_controller(
+                previous_controller=None,
+                slots=self._build_slots(),
+                resolve_paths=lambda: (_make_adb_resolution(path="adb-path"), "player-path", "sndcpy-dir"),
+                log_to_console=lambda msg, level: None,
+                last_adb_signature=None,
+                settings={},
+                project_root="D:/AppRoot",
+            )
+
+        self.assertIsInstance(controller, _CreatedController)
+        self.assertEqual(calls, [("adb-path", "player-path", "sndcpy-dir", "D:/AppRoot")])
 
 
 class DeviceServiceCoordinatorTests(unittest.TestCase):

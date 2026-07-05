@@ -159,7 +159,7 @@ def log_adb_resolution_fallback(source: str, path: str) -> str:
 
 
 def log_adb_resolution_builtin(path: str) -> str:
-    return f"ADB 当前使用内置版本: {path}"
+    return f"ADB 当前使用内置 vendor: {path}"
 
 
 def log_adb_resolution_external(source: str, path: str) -> str:

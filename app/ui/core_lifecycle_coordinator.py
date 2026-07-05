@@ -56,7 +56,7 @@ def maybe_log_adb_resolution(
         )
         return signature
 
-    if adb_resolution.source == "内置 Sndcpy":
+    if adb_resolution.source in {"内置 vendor", "内置 Sndcpy"}:
         log_to_console(log_adb_resolution_builtin(adb_resolution.path), "info")
         return signature
 
@@ -133,6 +133,7 @@ def recreate_core_controller(
     log_to_console: Callable[[str, str], None],
     last_adb_signature: tuple | None,
     settings: dict,
+    project_root: str | None = None,
 ) -> tuple[CoreController, tuple | None]:
     if previous_controller:
         disconnect_core_signals(previous_controller, slots)
@@ -142,7 +143,7 @@ def recreate_core_controller(
     adb_resolution, player_path, sndcpy_dir = resolve_paths()
     new_signature = maybe_log_adb_resolution(adb_resolution, last_adb_signature, log_to_console)
 
-    controller = CoreController(adb_resolution.path, player_path, sndcpy_dir)
+    controller = CoreController(adb_resolution.path, player_path, sndcpy_dir, project_root=project_root)
     new_signature = sync_core_runtime(
         core_controller=controller,
         settings=settings,

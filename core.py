@@ -45,10 +45,11 @@ class CoreController(QObject):
     file_transfer_progress = pyqtSignal(str, str, str, str, str, int)
     recording_state_changed = pyqtSignal(object)
 
-    def __init__(self, adb_path: str, player_path: str, sndcpy_dir: str):
+    def __init__(self, adb_path: str, player_path: str, sndcpy_dir: str, project_root: str | None = None):
         super().__init__()
         self._cmd_manager = ADBCommand({"adb_path": adb_path, "player_path": player_path, "sndcpy_dir": sndcpy_dir})
         self._running = True
+        self._project_root = project_root
         self._process_registry = ProcessRegistry()
         self._process_supervisor = ProcessSupervisor(self._process_registry)
         self._task_runner = BackgroundTaskRunner()
@@ -59,6 +60,7 @@ class CoreController(QObject):
             cmd_manager=self._cmd_manager,
             run_adb_command=self._adb_client.run_logged,
             task_runner=self._task_runner,
+            project_root=self._project_root,
         )
         self._route_service = RouteService(
             cmd_manager=self._cmd_manager,

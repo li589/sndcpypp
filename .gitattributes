@@ -1,0 +1,17 @@
+# Keep runtime vendor artifacts byte-stable across platforms.
+/vendor/**/*.exe binary
+/vendor/**/*.dll binary
+/vendor/**/*.so binary
+/vendor/**/*.dylib binary
+/vendor/**/*.apk binary
+/vendor/**/adb binary
+/vendor/**/scrcpy binary
+/vendor/**/scrcpy-server binary
+/vendor/**/AudioRouter* binary
+/vendor/**/fastboot binary
+/vendor/**/sqlite3 binary
+/vendor/**/etc1tool binary
+/vendor/**/hprof-conv binary
+/vendor/**/make_f2fs binary
+/vendor/**/make_f2fs_casefold binary
+/vendor/**/mke2fs binary
