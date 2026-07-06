@@ -11,18 +11,9 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows (${{ matrix.arch }})
+    name: Build Windows x64
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            python-arch: 'x64'
-            asset-name: sndcpy++-windows-x64.zip
-          - arch: x86
-            python-arch: 'x86'
-            asset-name: sndcpy++-windows-x86.zip
+    # PyQt6 6.9.0 无 32 位 wheels (仅 win_amd64 / win_arm64)，故不提供 x86 构建。
 
     steps:
       - name: Checkout
@@ -32,7 +23,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-          architecture: ${{ matrix.python-arch }}
+          architecture: 'x64'
           cache: 'pip'
 
       - name: Install dependencies
@@ -55,13 +46,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path dist/sndcpypp.exe -DestinationPath "release/${{ matrix.asset-name }}" -Force
+          Compress-Archive -Path dist/sndcpypp.exe -DestinationPath "release/sndcpy++-windows-x64.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.asset-name }}
-          path: release/${{ matrix.asset-name }}
+          name: sndcpy++-windows-x64.zip
+          path: release/sndcpy++-windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -69,6 +60,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/${{ matrix.asset-name }}
+          files: release/sndcpy++-windows-x64.zip
           name: sndcpy++ ${{ github.ref_name }}
           generate_release_notes: false

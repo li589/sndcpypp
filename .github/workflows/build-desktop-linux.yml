@@ -11,8 +11,21 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux x64
-    runs-on: ubuntu-latest
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x64: ubuntu-latest (glibc 2.31+) 兼容 PyQt6 manylinux_2_28_x86_64 wheel
+          - arch: x64
+            runner: ubuntu-latest
+            asset-name: sndcpy++-linux-x64.zip
+          # arm64: PyQt6 6.9.0 的 aarch64 wheel 要求 manylinux_2_39 (glibc 2.39+)，
+          # 必须用 ubuntu-24.04-arm 原生 ARM runner（glibc 2.39）。
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            asset-name: sndcpy++-linux-arm64.zip
 
     steps:
       - name: Checkout
@@ -45,14 +58,14 @@ jobs:
       - name: Package artifact
         run: |
           mkdir -p release
-          cd dist && zip -r ../release/sndcpy++-linux-x64.zip sndcpypp && cd ..
+          cd dist && zip -r "../release/${{ matrix.asset-name }}" sndcpypp && cd ..
           ls -la release/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: sndcpy++-linux-x64.zip
-          path: release/sndcpy++-linux-x64.zip
+          name: ${{ matrix.asset-name }}
+          path: release/${{ matrix.asset-name }}
           if-no-files-found: error
           retention-days: 30
 
@@ -60,6 +73,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/sndcpy++-linux-x64.zip
+          files: release/${{ matrix.asset-name }}
           name: sndcpy++ ${{ github.ref_name }}
           generate_release_notes: false

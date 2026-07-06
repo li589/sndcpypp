@@ -18,6 +18,10 @@ jobs:
             arch: x64
             cmake-args: ''
             artifact: AudioRouter-linux-x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            cmake-args: ''
+            artifact: AudioRouter-linux-arm64
           - os: windows-latest
             arch: x64
             cmake-args: '-A x64'
@@ -104,10 +108,11 @@ jobs:
             | 平台 | sndcpy++ | AudioRouter |
             |------|----------|-------------|
             | Windows x64 | `sndcpy++-windows-x64.zip` | `AudioRouter-windows-x64.exe` |
-            | Windows x86 | `sndcpy++-windows-x86.zip` | `AudioRouter-windows-x86.exe` |
+            | Windows x86 | — (PyQt6 无 32 位 wheels) | `AudioRouter-windows-x86.exe` |
             | macOS Apple Silicon | `sndcpy++-macos-arm64.zip` | `AudioRouter-macos-arm64` |
             | macOS Intel | `sndcpy++-macos-x64.zip` | `AudioRouter-macos-x64` |
             | Linux x64 | `sndcpy++-linux-x64.zip` | `AudioRouter-linux-x64` |
+            | Linux ARM64 | `sndcpy++-linux-arm64.zip` | `AudioRouter-linux-arm64` |
 
             ### 功能
             - 音频转发（sndcpy.apk + AudioRouter）
