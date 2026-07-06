@@ -2,116 +2,99 @@
 
 ## Overview
 
-Sndcpy++ 采用渐进式分层重构策略，在不破坏现有功能的前提下，将旧的单体式 `main.py + core.py` 逐步演进为更清晰的结构。当前 `SndcpyGUI` 已迁入 `app/ui/main_window.py`，顶层 `main.py` 收敛为兼容垫片。
+Sndcpy++ 采用分层架构，将原本单体式的 `main.py + core.py` 演进为清晰的 `app/` 包结构。顶层 `main.py` 收敛为兼容垫片，`SndcpyGUI` 主窗口迁入 `app/ui/main_window.py`，控制逻辑收口于 `CoreController`，领域模型、服务层与基础设施层按职责分离。
 
-当前阶段重点：
-
-- 保留现有 GUI 和控制逻辑可运行
-- 抽取通用模型、服务层与命令构建逻辑
-- 建立新的 `app/` 包结构
-- 明确 `app/ui/main_window.py -> core.py -> services -> infrastructure` 边界
-- 统一后台任务入口与任务观测能力
-
-## Current Runtime Topology
+## Runtime Topology
 
 ```text
 main.py (兼容垫片)
   -> app/main.py (ApplicationEntry)
     -> app/bootstrap.py (Bootstrapper)
       -> app/ui/main_window.py (SndcpyGUI)
-        -> core.py (控制编排)
+        -> core.py (CoreController 控制编排)
           -> app/services/*
           -> app/infrastructure/process/task_runner.py
-          -> adb.exe
-          -> scrcpy.exe
-          -> sndcpy.apk
+          -> adb / scrcpy / sndcpy.apk
           -> VLC / AudioRouter
         -> app/infrastructure/adb/UsbMonitor.py
         -> app/ui/* (协调器层)
 ```
 
-> 注：`SndcpyGUI` 已从顶层 `main.py` 迁移至 `app/ui/main_window.py`，`app/` 包不再反向依赖顶层模块，回环依赖已打破。
+`app/` 包不再反向依赖顶层模块，回环依赖已打破。
 
-## Target Topology
-
-```text
-app.main
-  -> app.bootstrap
-    -> MainWindow
-    -> AppController
-    -> Services
-    -> Infrastructure
-
-兼容层:
-main.py
-core.py
-```
-
-## Refactor Layers
+## Layered Architecture
 
 ### UI Layer
 
-负责界面展示、表单输入、托盘和日志视图。
+负责界面展示、表单输入、托盘与日志视图。
 
-当前已抽出：
+主窗口与协调器模块：
 
-- `app/ui/main_window.py`（SndcpyGUI 主窗口，从顶层 `main.py` 迁入）
-- `app/ui/main_window_ui.py`、`app/ui/main_window_shell.py`
-- `app/ui/widgets.py`、`app/ui/dialogs.py`
-- `app/ui/popup_manager.py`、`app/ui/message_templates.py`
-- `app/ui/menu_builders.py`、`app/ui/menu_coordinator.py`
-- `app/ui/runtime_settings.py`
-- `app/ui/interaction_helpers.py`、`app/ui/request_builders.py`
-- `app/ui/device_page_controller.py`、`app/ui/device_runtime_coordinator.py`、`app/ui/device_service_coordinator.py`
-- `app/ui/file_page_controller.py`、`app/ui/file_table_presenter.py`、`app/ui/file_actions.py`
-- `app/ui/console_actions.py`、`app/ui/device_actions.py`、`app/ui/recording_actions.py`
-- `app/ui/recording_session_coordinator.py`、`app/ui/file_transfer_coordinator.py`
-- `app/ui/settings_coordinator.py`、`app/ui/core_lifecycle_coordinator.py`
-- `app/ui/console_logger_coordinator.py`、`app/ui/startup_coordinator.py`、`app/ui/teardown_coordinator.py`
+- `app/ui/main_window.py` — `SndcpyGUI` 主窗口（从顶层 `main.py` 迁入）
+- `app/ui/main_window_ui.py` — 主窗口 UI 组装、页面挂载与控件引用绑定
+- `app/ui/main_window_shell.py` — 托盘、窗口置顶、最小化、隐藏到托盘等壳行为
+- `app/ui/runtime_settings.py` — 运行时路径解析、默认路径兜底与运行时配置请求构造
+- `app/ui/widgets.py` — 可复用自定义控件（文件表格项、自动扩展输入框、拖放表格、刷新开关按钮）
+- `app/ui/dialogs.py` — 自定义弹窗组件（`ExitConfirmDialog` / `ParamSettingsDialog` / `FileConflictDialog`）
+- `app/ui/popup_manager.py` — 弹窗统一入口（标准消息框、确认框、自定义对话框返回值封装）
+- `app/ui/message_templates.py` — 控制台日志前缀、状态栏提示、文件列表摘要与菜单文案模板
+- `app/ui/menu_builders.py` — 托盘菜单、窗口右键菜单、文件页右键菜单的统一样式
+- `app/ui/menu_coordinator.py` — 控制台右键菜单导出 / 清空与文件页右键菜单语义动作分发
+- `app/ui/interaction_helpers.py` — 可复用纯 UI 协调规则
+- `app/ui/request_builders.py` — 请求对象构造方法集中入口
 
-计划模块：
+页面级协调器：
 
-- `app/ui/pages/*.py`
-- `app/ui/dialogs/*.py`（进一步拆分弹窗）
-- `app/ui/widgets/*.py`（进一步拆分自定义控件）
+- `app/ui/device_page_controller.py` — 设备列表刷新、选中项保持与设备下拉框同步
+- `app/ui/device_runtime_coordinator.py` — 路径校验结果到状态栏、按钮恢复与首启后续动作编排
+- `app/ui/device_service_coordinator.py` — 重启 ADB、清理 ADB、安装 sndcpy 等运维动作编排
+- `app/ui/file_page_controller.py` — 文件页刷新、返回上级、双击行为、右键菜单与下载动作编排
+- `app/ui/file_table_presenter.py` — 文件表格渲染、文件类型着色、符号链接目标展示
+- `app/ui/file_actions.py` — 文件下载前的本地目录校验、冲突处理与批量上传重名冲突分发
+- `app/ui/console_actions.py` — 控制台命令发送前的标准化、冷却触发与发送后清理
 
-### Application Layer
+会话级协调器：
 
-负责流程编排、会话状态机、事件分发。
+- `app/ui/recording_session_coordinator.py` — 录制会话状态机（开始 / 停止 / 失败）与状态栏计时、托盘提醒编排
+- `app/ui/file_transfer_coordinator.py` — 文件传输进度事件到进度条、状态栏与文件列表刷新的编排
+- `app/ui/settings_coordinator.py` — 设置持久化（加载 / 保存）与 UI 控件双向同步
+- `app/ui/core_lifecycle_coordinator.py` — 核心控制器启动、关闭请求与超时编排
+- `app/ui/console_logger_coordinator.py` — 控制台日志去重（签名 + 时间窗）与 HTML 渲染
+- `app/ui/startup_coordinator.py` — 启动例程（路径校验 + USB 监听启动）的纯函数式编排
+- `app/ui/teardown_coordinator.py` — 关闭事件全流程编排（退出确认 → 设置保存 → USB 停止 → 核心关闭 → 计时器停止 → 托盘隐藏）
 
-计划模块：
+动作协调模块：
 
-- `app/application/app_controller.py`
-- `app/application/session_manager.py`
-- `app/application/state_machine.py`
-- `app/application/event_bus.py`
+- `app/ui/device_actions.py` — 启动 / 停止类动作的前置冷却、状态栏文案与 UI 收尾
+- `app/ui/recording_actions.py` — 录制启动前的目标校验、音频冲突确认与覆盖处理
 
 ### Domain Layer
 
-负责通用模型与枚举。
-
-当前已抽出：
+负责通用模型与枚举，无副作用。
 
 - `app/domain/enums/file_type.py`
 - `app/domain/models/file_info.py`
 - `app/domain/models/operation_requests.py`
 
+### Services Layer
+
+负责业务逻辑编排。包含设备服务、路由服务、录制服务、文件管理服务、调试命令服务等。
+
 ### Infrastructure Layer
 
 负责技术细节与平台能力。
 
-当前已抽出：
-
-- `app/infrastructure/adb/command_builder.py`
-- `app/infrastructure/adb/adb_client.py`
-- `app/infrastructure/adb/path_resolver.py`（含 `get_platform_vendor_subdir()` / `resolve_apk_path()`，按 `sys.platform` 分流）
-- `app/infrastructure/adb/UsbMonitor.py`（三平台分流：pyudev / pywin32 / pyobjc）
-- `app/infrastructure/adb/scrcpy_capabilities.py`
-- `app/infrastructure/process/task_runner.py`
-- `app/infrastructure/process/registry.py`
-- `app/infrastructure/process/supervisor.py`（进程组终止按平台分流：Windows `CTRL_BREAK`+`taskkill` / POSIX `SIGINT`+`kill`）
-- `app/infrastructure/config/settings_store.py`
-- `app/infrastructure/config/logging_config.py`
+- `app/infrastructure/adb/command_builder.py` — ADB 命令构造
+- `app/infrastructure/adb/adb_client.py` — ADB 客户端封装
+- `app/infrastructure/adb/path_resolver.py` — 含 `get_platform_vendor_subdir()` / `resolve_apk_path()` / `resolve_vendor_tool_path()`，按 `sys.platform` 分流
+- `app/infrastructure/adb/UsbMonitor.py` — 三平台 USB 监听分流（pyudev / pywin32 + wmi / pyobjc）
+- `app/infrastructure/adb/scrcpy_capabilities.py` — scrcpy 能力探测
+- `app/infrastructure/process/task_runner.py` — `BackgroundTaskRunner` 后台线程统一入口与任务注册表
+- `app/infrastructure/process/registry.py` — 进程注册表
+- `app/infrastructure/process/supervisor.py` — 进程组终止按平台分流（Windows `CTRL_BREAK` + `taskkill` / POSIX `SIGINT` + `kill`）
+- `app/infrastructure/config/settings_store.py` — 设置持久化
+- `app/infrastructure/config/logging_config.py` — 日志初始化
+- `app/infrastructure/config/constants.py` — 运行时常量（端口、超时等）
 
 ## Cross-Platform Vendor Layout
 
@@ -127,57 +110,45 @@ vendor/
 
 平台分流入口：
 
-- `app/infrastructure/adb/path_resolver.py::get_platform_vendor_subdir()` —— 返回 `windows` / `macos` / `linux`
-- `app/ui/runtime_settings.py::get_default_sndcpy_dir()` —— 返回 `vendor/<platform>` 绝对路径
-- `app/ui/runtime_settings.py::get_default_apk_path()` —— 返回 `vendor/sndcpy.apk`
-- `app/infrastructure/adb/path_resolver.py::resolve_apk_path()` —— 优先用户 `sndcpy_dir/sndcpy.apk`，回退到 `vendor/sndcpy.apk`
-- `app/infrastructure/adb/path_resolver.py::resolve_vendor_tool_path()` —— 在 `vendor/<platform>/` 与 `vendor/<platform>/platform-tools/` 中查找 `adb` / `scrcpy`
-- `app/ui/runtime_settings.py::get_audio_router_candidate_paths()` —— 优先查找 `vendor/<platform>/AudioRouter*`，再回退到本地 CMake 构建目录
+- `app/infrastructure/adb/path_resolver.py::get_platform_vendor_subdir()` — 返回 `windows` / `macos` / `linux`
+- `app/ui/runtime_settings.py::get_default_sndcpy_dir()` — 返回 `vendor/<platform>` 绝对路径
+- `app/ui/runtime_settings.py::get_default_apk_path()` — 返回 `vendor/sndcpy.apk`
+- `app/infrastructure/adb/path_resolver.py::resolve_apk_path()` — 优先用户 `sndcpy_dir/sndcpy.apk`，回退到 `vendor/sndcpy.apk`
+- `app/infrastructure/adb/path_resolver.py::resolve_vendor_tool_path()` — 在 `vendor/<platform>/` 与 `vendor/<platform>/platform-tools/` 中查找 `adb` / `scrcpy`
+- `app/ui/runtime_settings.py::get_audio_router_candidate_paths()` — 优先查找 `vendor/<platform>/AudioRouter*`，再回退到本地 CMake 构建目录
 
-平台分支约定（已有 30+ 处）：
+平台分支约定：
 
 - 二进制后缀：`ext = ".exe" if os.name == "nt" else ""`
 - 子进程窗口标志：`subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0`
 - 进程组信号：Windows 走 `CTRL_BREAK_EVENT` + `taskkill /F /T`；POSIX 走 `SIGINT` + `proc.kill()`
-- 托盘/置顶/全屏检测：`sys.platform == "win32"` 分支
-- USB 监听后端：`sys.platform` 三分支（pyudev / pywin32+wmi / pyobjc）
+- 托盘 / 置顶 / 全屏检测：`sys.platform == "win32"` 分支
+- USB 监听后端：`sys.platform` 三分支（pyudev / pywin32 + wmi / pyobjc）
 - 设置存储目录：Windows 走 `%APPDATA%/sndcpypp/`，POSIX 走 `~/.sndcpypp/`
 
-AudioRouter 跨平台说明：
+## AudioRouter Backend
 
-- C++ 项目用 asio + miniaudio，两者均 header-only 且跨平台
-- `AudioRouter/CMakeLists.txt` 已三平台分支（WIN32 链 ws2_32，APPLE 链 CoreAudio，UNIX 链 dl/m/pthread）
+AudioRouter 是 C++ 原生音频接收 / 播放后端，源码位于 `AudioRouter/`。
+
+- 基于 asio + miniaudio，两者均为 header-only 且跨平台
+- `AudioRouter/CMakeLists.txt` 已三平台分支（WIN32 链 ws2_32，APPLE 链 CoreAudio，UNIX 链 dl / m / pthread）
 - 源码中 Windows 特有代码用 `#ifdef _WIN32` 隔离
-- **不需要交叉编译**，在目标平台原生 `cmake .. && make` 即可
-- macOS/Linux 上找不到 AudioRouter 时自动回退到系统 VLC（见 `runtime_settings.py::get_default_player_path()`）
-- 没有目标平台机器时，用 GitHub Actions 矩阵构建：`.github/workflows/build-audiorouter.yml`
-  - 三 runner（windows-latest / macos-latest / ubuntu-latest）各自原生编译
-  - macOS 用 `-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"` 构建 universal binary
+- 在目标平台原生 `cmake .. && make` 即可，无需交叉编译
+- macOS / Linux 上找不到 AudioRouter 时自动回退到系统 VLC（见 `runtime_settings.py::get_default_player_path()`）
+- 跨平台构建通过 GitHub Actions 矩阵：`.github/workflows/build-audiorouter.yml`
+  - 六体系构建：Windows x64 / x86、Linux x64 / arm64、macOS arm64 / x64
+  - macOS 通过 `-DCMAKE_OSX_ARCHITECTURES` 交叉编译 x86_64 / arm64
   - Linux 装 `libasound2-dev libpulse-dev`（miniaudio 在 Linux 上的音频后端）
-  - 产物按 `AudioRouter-{windows-x64.exe,macos-universal,linux-x64}` 命名上传到 artifact
-  - 推 `v*` tag 时自动创建 Release 并附上三平台产物
-
-## Current Compatibility Strategy
-
-为避免一次性大改导致功能回归，当前采用兼容方案：
-
-- `main.py` 已收敛为兼容垫片，仅 `from app.main import ApplicationEntry`
-- `app/main.py` 作为重构入口，承载 `ApplicationEntry`
-- `app/bootstrap.py` 负责日志初始化与主窗口创建
-- `app/ui/main_window.py` 承载 `SndcpyGUI`（从顶层 `main.py` 迁入）
-- `core.py` 继续保留控制逻辑
-- `core.py` 已开始依赖 `app/` 中的抽离模块
-- USB 监听维持单文件实现，但路径已迁移到 `app/infrastructure/adb/UsbMonitor.py`
-- `app/` 包不再反向依赖顶层 `main.py`，回环依赖已打破
+  - 推 `v*` tag 时自动创建 Release 并附上六平台产物
 
 ## Interaction Flow
 
-当前主要按钮和入口的运行链路如下：
+主要按钮与入口的运行链路：
 
-| UI入口 | `app/ui/main_window.py` | `core.py` | service / infrastructure | 外部进程或资源 |
+| UI 入口 | `app/ui/main_window.py` | `core.py` | service / infrastructure | 外部进程或资源 |
 | --- | --- | --- | --- | --- |
 | 路径验证 | `validate_paths()` | `request_configure_runtime(RuntimeConfigurationRequest)` + `request_validate_runtime()` | `ADBDeviceService.validate_paths()` | `adb.exe` / `scrcpy.exe` / `sndcpy.apk` / 播放器 |
-| 刷新设备 | `manual_refresh_devices()` / `auto_refresh_devices()` | `request_refresh_devices()` | `ADBDeviceService.refresh_devices()` -> `ADBClient.run_logged()` | `adb devices` |
+| 刷新设备 | `manual_refresh_devices()` / `auto_refresh_devices()` | `request_refresh_devices()` | `ADBDeviceService.refresh_devices()` → `ADBClient.run_logged()` | `adb devices` |
 | 安装 SNDCPY | `install_sndcpy()` | `request_install_apk()` | `ADBDeviceService.install_apk()` | `adb install` |
 | 一键启动路由 | `start_routing()` | `request_start_routing_session(RoutingRequest)` | `RouteService.start_audio_route()` / `start_video_route()` | `adb forward` / `sndcpy.apk` / `scrcpy.exe` / 播放器 |
 | 独立音频启动 | `start_audio_only()` | `request_start_audio_route()` | `RouteService.start_audio_route()` | `adb` / 播放器 |
@@ -196,57 +167,28 @@ AudioRouter 跨平台说明：
 
 ### Strictly Serialized
 
-- 所有通过 `ADBClient.run_logged()` 发出的 ADB 命令统一串行，避免 `adb devices`、`kill-server`、`forward`、`shell` 互相打架。
-- 同一设备的录制流程使用设备锁保护，保证“停止旧录制 -> 处理音频冲突 -> 启动新录制”按顺序执行。
-- 同一设备的录音和独立音频路由存在资源冲突，录音启动时必须先暂停音频路由，录制结束后再尝试恢复。
-- 同一设备的文件传输使用设备锁保护，保证同设备多文件上传/下载按真实传输顺序更新进度。
-- 录制始终使用后台无预览模式，避免在已有路由窗口之外再拉起新的录制窗口。
-- 录制 watcher 与视频路由 watcher 使用显式“主动停止”标记，避免用户手动停止时被误记为失败或异常退出。
+- 所有通过 `ADBClient.run_logged()` 发出的 ADB 命令统一串行，避免 `adb devices`、`kill-server`、`forward`、`shell` 互相打架
+- 同一设备的录制流程使用设备锁保护，保证"停止旧录制 → 处理音频冲突 → 启动新录制"按顺序执行
+- 同一设备的录音和独立音频路由存在资源冲突，录制启动时必须先暂停音频路由，录制结束后再尝试恢复
+- 同一设备的文件传输使用设备锁保护，保证同设备多文件上传 / 下载按真实传输顺序更新进度
+- 录制始终使用后台无预览模式，避免在已有路由窗口之外再拉起新的录制窗口
+- 录制 watcher 与视频路由 watcher 使用显式"主动停止"标记，避免用户手动停止时被误记为失败或异常退出
 
 ### Can Run In Parallel
 
-- UI 更新、状态栏刷新、日志输出、进度条更新可以并行发生。
-- `scrcpy` 视频进程、播放器音频进程、文件传输监控线程可以并行存在。
-- 不同设备上的非 ADB 进程可以并行运行，例如多个设备同时存在 `scrcpy` 或录制进程。
-- 文件页中符号链接解析和目录列表渲染可以并行，解析结果再异步回写到表格。
+- UI 更新、状态栏刷新、日志输出、进度条更新可以并行发生
+- `scrcpy` 视频进程、播放器音频进程、文件传输监控线程可以并行存在
+- 不同设备上的非 ADB 进程可以并行运行（例如多个设备同时存在 `scrcpy` 或录制进程）
+- 文件页中符号链接解析和目录列表渲染可以并行，解析结果再异步回写到表格
 
 ### Mixed Strategy
 
-- 一键启动路由会同时提交“音频启动任务”和“视频启动任务”，但其中涉及的 ADB 子命令仍受全局 ADB 串行锁保护。
-- 多设备文件传输在进程层可并行；同一设备的多个文件传输由设备锁串行化，避免单设备进度状态互相覆盖。
-
-## Blocking Hotspots
-
-重点排查和已经识别出的慢响应点：
-
-1. 点击路由相关按钮后，若立即在主线程执行 `kill_group()`，会导致 UI 短暂卡顿。
-2. 第一次启动视频或录制时，`scrcpy --help` 能力探测若在主线程中执行，会明显拖慢首击响应。
-3. ADB 服务重启和设备刷新如果同步等待 `subprocess.run()` 结果，会让按钮反馈变慢。
-4. 停止录制或停止路由时，进程清理若发生在主线程，会让界面误以为“按钮没点上”。
-5. 文件页目录扫描和冲突判断如果混入主线程重计算，会让大目录切换卡顿。
-
-## First Optimization Batch
-
-当前已经优先优化的第一批入口：
-
-1. `一键启动路由`
-   - 把旧进程清理和能力探测挪到后台线程
-   - `app/ui/main_window.py` 只负责收集 UI 参数并调用 `core`
-2. `独立音频`
-   - 停止和启动都改为后台任务
-   - 补充按钮冷却，避免快速连点
-3. `录制`
-   - 录制命令拼装与能力探测移到后台
-   - 固定使用无预览录制，避免新增录制窗口
-   - 保留同设备录制锁，避免竞态
-4. `重启ADB`
-   - 改成“立即反馈 + 后台执行 + 异步刷新设备”
-5. `清理ADB`
-   - 保持后台执行，避免 `taskkill` 阻塞主窗口
+- 一键启动路由会同时提交"音频启动任务"和"视频启动任务"，但其中涉及的 ADB 子命令仍受全局 ADB 串行锁保护
+- 多设备文件传输在进程层可并行；同一设备的多个文件传输由设备锁串行化，避免单设备进度状态互相覆盖
 
 ## Main And Core Boundary
 
-当前边界原则：
+边界原则：
 
 - `app/ui/main_window.py`
   - 负责 UI 状态读取
@@ -257,181 +199,47 @@ AudioRouter 跨平台说明：
   - 负责把 UI 请求路由到具体 service
   - 屏蔽内部注册表、进程组、命令构建器等实现细节
 
-当前已经完成的门面收口：
-
-- `request_configure_runtime()`
-- `request_validate_runtime()`
-- `request_refresh_devices()`
-- `request_install_apk()`
-- `request_start_routing_session()`
-- `request_start_audio_route()`
-- `request_stop_audio_routes()`
-- `request_start_recording()` / `request_stop_recording()`
-- `request_list_device_files()`
-- `request_push_file()` / `request_pull_file()`
-- `request_execute_console_target()`
-- `request_restart_adb()` / `request_force_kill_adb()`
-- `request_start_adb_server()`
-- `request_stop_streaming()`
-- `request_shutdown()`
-
-## UI Coordination Layer
-
-为了继续削薄 `app/ui/main_window.py`，当前把一部分“纯 UI 协调逻辑”下沉到了 [interaction_helpers.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/interaction_helpers.py)，并新增了统一弹窗入口 [popup_manager.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/popup_manager.py)、消息模板层 [message_templates.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/message_templates.py)、菜单构建辅助层 [menu_builders.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/menu_builders.py)、菜单协调层 [menu_coordinator.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/menu_coordinator.py)、主窗口 UI 组装层 [main_window_ui.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/main_window_ui.py)、主窗口壳行为层 [main_window_shell.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/main_window_shell.py)、运行时设置与默认路径层 [runtime_settings.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/runtime_settings.py)、设备页控制层 [device_page_controller.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/device_page_controller.py)、设备页运行时协调层 [device_runtime_coordinator.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/device_runtime_coordinator.py)、设备页运维动作协调层 [device_service_coordinator.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/device_service_coordinator.py)、文件页控制层 [file_page_controller.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/file_page_controller.py)、文件表格呈现层 [file_table_presenter.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/file_table_presenter.py)、通用控件层 [widgets.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/widgets.py) 以及按页面拆分的动作协调模块：
-
-- 按钮冷却与恢复
-- 远程路径规范化、拼接与返回上级目录
-- 录制文件名生成
-- 上传/下载自动重命名策略
-- 常用弹窗消息与状态文案模板
-- 常用确认弹窗与文件冲突选择流程
-- 参数设置、退出确认、成功/警告/错误提示的统一入口
-- `QFileDialog` 的打开文件、保存文件、选择目录统一入口
-- 控制台前缀颜色、状态栏提示、文件列表摘要模板
-- 文件页右键菜单、托盘菜单、窗口菜单、控制台菜单文案与常用业务日志模板
-- 统一菜单样式与“菜单点击 -> 语义动作”转换
-
-配套的自定义弹窗组件放在 [dialogs.py](file:///d:/temp_desktop/Proj/sndcpy++/app/ui/dialogs.py)：
-
-- `ExitConfirmDialog`
-- `ParamSettingsDialog`
-- `FileConflictDialog`
-
-当前分工：
-
-- `app/ui/main_window.py`
-  - 负责触发用户交互
-  - 负责把用户选择结果转成动作请求
-  - 负责更新控件状态与状态栏
-- `popup_manager.py`
-  - 负责所有弹窗的统一入口
-  - 负责标准消息框、确认框、自定义对话框的返回值封装
-  - 负责弹窗文案、结果语义、系统文件选择弹窗和弹窗审计日志
-- `interaction_helpers.py`
-  - 负责可复用的纯 UI 协调规则
-  - 不依赖业务 service
-  - 不直接触发 `core` 动作
-- `message_templates.py`
-  - 负责控制台日志前缀与颜色模板
-  - 负责状态栏提示与文件列表摘要模板
-  - 负责菜单文案与高频业务日志模板
-- `menu_builders.py`
-  - 负责托盘菜单、窗口右键菜单、文件页右键菜单的统一样式
-  - 负责把菜单点击结果转换为稳定的语义动作，减少 `app/ui/main_window.py` 中的 `QAction` 分发细节
-- `menu_coordinator.py`
-  - 负责控制台右键菜单的导出/清空流程
-  - 负责文件页右键菜单语义动作到 UI 行为的最终分发
-- `main_window_ui.py`
-  - 负责主窗口外壳的 UI 组装、页面挂载和控件引用绑定
-  - 负责统一主题和主窗口级视觉样式
-- `main_window_shell.py`
-  - 负责托盘、窗口置顶、最小化、隐藏到托盘等主窗口壳行为
-  - 负责窗口菜单动作到主窗口行为的分发
-- `runtime_settings.py`
-  - 负责运行时路径解析、默认路径兜底和运行时配置请求构造
-  - 负责 UI 设置在控件与持久化字典之间的同步
-- `device_page_controller.py`
-  - 负责设备列表刷新、选中项保持和设备相关下拉框同步
-  - 负责手动/自动刷新与“当前选中设备”提取等页面级交互编排
-- `device_runtime_coordinator.py`
-  - 负责路径校验结果到状态栏文本、按钮恢复和首启后续动作触发的编排
-  - 负责将首启校验阶段的 UI 状态计算保持为纯协调逻辑
-- `device_service_coordinator.py`
-  - 负责重启 ADB、清理 ADB 等设备运维动作的提交前 UI 编排
-  - 负责操作完成后的进度条隐藏、状态栏文案和安装结果提示收尾
-- `file_page_controller.py`
-  - 负责文件页刷新、返回上级、双击行为、右键菜单和下载动作编排
-  - 负责把文件页控件事件组织为稳定的页面级交互流程
-- `file_table_presenter.py`
-  - 负责文件表格渲染、文件类型着色、符号链接目标展示和表格内更新
-- `widgets.py`
-  - 负责可复用的自定义控件，如文件表格项、自动扩展输入框、拖放表格和刷新开关按钮
-- `console_actions.py`
-  - 负责控制台命令发送前的标准化、冷却触发和发送后清理
-- `device_actions.py`
-  - 负责启动类动作的前置冷却、状态栏文案和进度条准备编排
-  - 负责停止类动作的前置冷却、范围化状态文案和提交后 UI 收尾
-- `recording_actions.py`
-  - 负责录制启动前的目标校验、音频冲突确认与覆盖处理
-- `file_actions.py`
-  - 负责文件下载前的本地目录校验、冲突处理与提交前日志
-  - 负责批量上传前的重名冲突分发与日志编排
-- `recording_session_coordinator.py`
-  - 负责录制会话状态机（开始/停止/失败）与状态栏计时、托盘提醒的编排
-  - 持有 `RecordingSessionState`，避免 `main_window.py` 直接管理会话表
-- `file_transfer_coordinator.py`
-  - 负责文件传输进度事件到进度条、状态栏和文件列表刷新的 UI 编排
-  - 负责传输完成后是否刷新当前文件视图的判定
-- `settings_coordinator.py`
-  - 负责设置持久化（加载/保存）与 UI 控件之间的双向同步
-  - 负责命令额外参数应用与设置存储异常的统一收口
-- `core_lifecycle_coordinator.py`
-  - 负责核心控制器的启动、关闭请求与等待、关闭超时的统一编排
-  - 让 `main_window.py` 不再直接持有核心控制器生命周期细节
-- `device_service_coordinator.py`
-  - 负责重启 ADB、清理 ADB、安装 sndcpy 等设备运维动作的提交前 UI 编排
-  - 负责操作完成后的进度条隐藏、状态栏文案和安装结果提示收尾
-- `console_logger_coordinator.py`
-  - 负责控制台日志的去重（签名 + 时间窗）与 HTML 渲染
-  - 持有去重状态，替代 `main_window.py` 中原有的内联去重逻辑
-- `startup_coordinator.py`
-  - 负责启动例程（路径校验 + USB 监听启动）的纯函数式编排
-  - 返回 `bool` 让调用方决定是否清空 `usb_monitor` 引用
-- `teardown_coordinator.py`
-  - 负责关闭事件（退出确认 → 设置保存 → USB 停止 → 核心关闭 → 计时器停止 → 托盘隐藏）的全流程编排
-  - 直接调用 `event.accept()` / `event.ignore()`，让 `main_window.py` 的 `closeEvent` 极薄
-
-这层的价值是：
-
-- 减少 `main_window.py` 中重复的字符串、路径和命名分支
-- 让 `main_window.py` 更接近“主窗口总壳 + 生命周期协调”，而不是 UI 搭建脚本
-- 避免 `main_window.py` 直接散落 `QMessageBox` 和 `dialog.exec()` 细节
-- 让弹窗操作具备统一主题和可追踪的审计日志
-- 让控制台与状态栏提示拥有统一模板来源
-- 保持交互行为一致
-- 为后续抽离更完整的 UI 协调器类留下空间
-
 ## Core Public API
 
-`CoreController` 当前面向 `app/ui/main_window.py` 的公开能力，建议按下面几个分区理解：
+`CoreController` 面向 UI 层的公开能力按以下分区组织：
 
-- 运行时与生命周期
+- **运行时与生命周期**
   - `request_configure_runtime(RuntimeConfigurationRequest)`
   - `request_validate_runtime()`
   - `request_prewarm_scrcpy_capabilities()`
   - `request_shutdown()`
-- 设备与 ADB
+- **设备与 ADB**
   - `request_refresh_devices()`
   - `request_install_apk()`
   - `request_start_adb_server()`
   - `request_restart_adb()`
   - `request_force_kill_adb()`
-- 路由
+- **路由**
   - `request_start_audio_route()`
   - `request_start_routing_session(RoutingRequest)`
   - `request_stop_audio_routes()`
   - `request_stop_streaming()`
-  - 查询接口 `is_audio_running()`
-- 录制
+  - `is_audio_running()`
+- **录制**
   - `request_start_recording(RecordingRequest)`
   - `request_stop_recording()`
-- 文件传输
+- **文件传输**
   - `request_list_device_files(BrowseFilesRequest)`
   - `request_push_file(PushFileRequest)`
   - `request_pull_file(PullFileRequest)`
-- 控制台
+- **控制台**
   - `request_execute_console_target(ConsoleCommandRequest)`
 
-这样划分后，`app/ui/main_window.py` 中的调用语义会更稳定：
+调用语义约定：
 
-- `request_*` 统一表示“发起一个动作”
-- `is_*` 统一表示“查询当前状态”
-- 运行时配置、路由、录制、文件传输、控制台命令这类多参数动作优先通过请求对象进入 `core`
+- `request_*` 统一表示"发起一个动作"
+- `is_*` 统一表示"查询当前状态"
+- 多参数动作优先通过请求对象进入 `core`
 - 内部 service、进程注册表、命令构造器都留在 `core.py` 之后，不再由 UI 直接触达
 
 ## Event And Request Contracts
 
-当前主流程中的程序语义通过显式请求对象和事件对象流转，而不是依赖日志展示文案：
+主流程通过显式请求对象与事件对象流转，不依赖日志展示文案：
 
 - `ConsoleCommandRequest`
   - 使用 `ConsoleTargetKind` 表达目标类型
@@ -450,69 +258,34 @@ AudioRouter 跨平台说明：
 
 ## Runtime Defaults And Persistence
 
-当前运行时默认值与持久化策略做了两项增强：
-
-- 默认播放器路径
-  - `runtime_settings.py` 会优先尝试 `shutil.which("vlc")`
-  - Windows 下还会扫描常见的 `VideoLAN\VLC\vlc.exe` 安装目录
-  - 最后才回退到仓库内的 `RouteAudio/AudioExt`
-- 设置文件路径
-  - `settings_store.py` 通过 `get_default_settings_path()` 将 `settings.json` 放到用户可写目录
-  - Windows 优先使用 `%APPDATA%\sndcpypp\settings.json`
-  - 保存前自动创建父目录，避免安装目录只读导致保存失败
+- **默认播放器路径**：`runtime_settings.py` 优先尝试 `shutil.which("vlc")`；Windows 下扫描常见 `VideoLAN\VLC\vlc.exe` 安装目录；最后回退到仓库内的 AudioRouter
+- **设置文件路径**：`settings_store.py` 通过 `get_default_settings_path()` 将 `settings.json` 放到用户可写目录；Windows 优先使用 `%APPDATA%\sndcpypp\settings.json`；保存前自动创建父目录，避免安装目录只读导致保存失败
 
 ## Background Task Observability
 
-当前后台任务统一经过 `app/infrastructure/process/task_runner.py` 中的 `BackgroundTaskRunner` 发起，除了代替裸 `daemon` 线程，还额外承担了轻量任务注册表的职责。
+后台任务统一经过 `app/infrastructure/process/task_runner.py` 中的 `BackgroundTaskRunner` 发起，除了代替裸 `daemon` 线程，还承担轻量任务注册表的职责。
 
-当前能力：
+能力：
 
-- 为任务记录 `group`、状态、起止时间和异常文本
+- 为任务记录 `group`、状态、起止时间与异常文本
 - 提供 `snapshot()`、`snapshot_by_group()`、`get_task()`、`wait_all()`
 - 提供 `recent_failed_tasks()` 和 `clear_history()`
 - 通过监听器把失败任务回灌到 `CoreController.log_message`
 
-当前 `CoreController` 暴露的观测接口：
+`CoreController` 暴露的观测接口：
 
 - `get_background_task_snapshot()`
 - `get_background_tasks_by_group()`
 - `get_recent_background_failures()`
 - `clear_background_task_history()`
 
-这意味着：
-
-- UI 层不需要直接管理后台线程对象
-- 后台任务失败可以进入统一控制台日志
-- 后续如果做“任务状态面板”或调试页，可以直接复用现有观测接口
-
-## Verification Snapshot
-
-截至当前代码状态，已完成的自动化验证包括：
-
-- `161` 项 `unittest` 回归测试（全部通过，~2s 内完成）
-- `UsbMonitor` 生命周期、Generic fallback 和重启能力测试
-- 录制后台无预览、主动停止不误判失败测试
-- 视频路由立即退出失败、主动停止不误报警告、ADB 预热与重试测试
-- ADB 设备刷新重试与安装重试逻辑测试
-- 文件下载缓存转移失败、批量上传重名冲突、传输失败错误消息提取、关停清理不阻塞测试
-- 设置目录自动创建、用户目录默认路径与运行时默认播放器解析测试
-- 9 个 UI 协调器（录制会话、文件传输、设置、核心生命周期、设备服务、控制台日志、启动、关闭、请求构建器）的冒烟测试
-- `app.main → app.bootstrap → app.ui.main_window` 无循环导入验证
-
-## Next Refactor Steps
-
-1. 继续减少 `app/ui/main_window.py` 中的业务参数拼装代码
-2. 逐步把重复的 UI 参数收集整理成请求对象或参数模型
-3. 继续把冲突弹窗决策与状态文案生成整理到 UI 协调层
-4. 拆分 `app/ui/main_window.py` 为页面、弹窗、自定义控件
-5. ~~接入 `AudioRouter` 作为标准音频后端~~（已完成）
-6. ~~打破 `app.main → app.bootstrap → main.py` 回环依赖~~（已完成）
-7. ~~跨平台 vendor 目录结构与平台分流入口~~（已完成；旧 `Sndcpy/` 已迁移到 `vendor/{windows,macos,linux}/`，sndcpy.apk 提到 `vendor/` 顶层）
-8. 在 macOS / Linux 上做一次实机 smoke test，验证 `os.name != "nt"` 分支
-9. ~~在目标平台原生编译 AudioRouter，补充 `vendor/<platform>/AudioRouter` 编译产物~~（已用 GitHub Actions 矩阵构建，见 `.github/workflows/build-audiorouter.yml`；推 `v*` tag 自动发 release，手动触发可下载 artifact）
+UI 层不需要直接管理后台线程对象；后台任务失败进入统一控制台日志；后续若做"任务状态面板"或调试页，可直接复用现有观测接口。
 
 ## Design Constraints
 
 - 不破坏现有用户工作流
 - 优先做可增量迁移的模块
 - 先保证兼容，再做深度解耦
+- `UsbMonitor.py` 保持单文件实现以便跨项目复用
+- 库代码必须使用 `log_to_console` 回调，不得直接 `print()`
+- 跨平台二进制依赖统一放在 `vendor/`，不在业务代码里重复 `sys.platform` 判断

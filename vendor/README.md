@@ -1,9 +1,8 @@
 # vendor/ 目录说明
 
-跨平台外部二进制依赖统一存放点。`sndcpy.apk` 与平台无关，放顶层；
-`scrcpy` / `adb` 等二进制按平台分子目录。
+跨平台外部二进制依赖统一存放点。`sndcpy.apk` 与平台无关，放顶层；`scrcpy` / `adb` 等二进制按平台分子目录。
 
-## 期望结构
+## 目录结构
 
 ```
 vendor/
@@ -13,14 +12,7 @@ vendor/
 └── linux/                  # Linux 二进制（adb, scrcpy, AudioRouter*）
 ```
 
-`adb` / `scrcpy` 可以直接放在 `vendor/<platform>/` 下，也可以放在
-`vendor/<platform>/platform-tools/` 下；代码会自动按当前平台查找。
-
-GitHub Actions 产出的 AudioRouter 文件名可直接保留：
-
-- `vendor/windows/AudioRouter-windows-x64.exe`
-- `vendor/macos/AudioRouter-macos-universal`
-- `vendor/linux/AudioRouter-linux-x64`
+`adb` / `scrcpy` 可以直接放在 `vendor/<platform>/` 下，也可以放在 `vendor/<platform>/platform-tools/` 下；代码会自动按当前平台查找。
 
 ## 下载来源
 
@@ -34,12 +26,20 @@ GitHub Actions 产出的 AudioRouter 文件名可直接保留：
 adb 包含在 scrcpy 的 release zip 里（v2.x+），也可单独从 Android SDK Platform Tools 下载：
 https://developer.android.com/tools/releases/platform-tools
 
+> 仓库不内置 `sndcpy.apk` 以避免版本陈旧，首次克隆后需手动下载并放到 `vendor/sndcpy.apk`。
+
 ## AudioRouter 编译产物
 
-AudioRouter 源码仍在 `AudioRouter/` 顶层 CMake 项目中。
-运行时优先查找 `vendor/<platform>/` 下的发行产物，然后回退到本地 CMake 构建目录。
-跨平台编译参考 `AudioRouter/CMakeLists.txt`，原生编译即可：
+AudioRouter 源码位于 `AudioRouter/` 顶层 CMake 项目中。运行时优先查找 `vendor/<platform>/` 下的发行产物，然后回退到本地 CMake 构建目录。
+
+跨平台编译参考 `AudioRouter/CMakeLists.txt`，在目标平台原生编译即可：
 
 ```bash
 cd AudioRouter && mkdir build && cd build && cmake .. && make   # mac/linux
 ```
+
+GitHub Actions 产出的 AudioRouter 产物文件名：
+
+- `vendor/windows/AudioRouter-windows-x64.exe`
+- `vendor/macos/AudioRouter-macos-arm64` / `AudioRouter-macos-x64`
+- `vendor/linux/AudioRouter-linux-x64` / `AudioRouter-linux-arm64`

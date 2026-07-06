@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你对 sndcpy++ 项目的兴趣！本文档指导你如何参与贡献。
+本文档说明如何参与 sndcpy++ 项目的贡献。
 
 ## 行为准则
 
@@ -41,7 +41,7 @@ python -m unittest discover -s tests -v
 
 项目运行需要 `vendor/` 目录下的外部二进制（sndcpy.apk、adb、scrcpy、AudioRouter）。详见 [vendor/README.md](vendor/README.md)。
 
-首次克隆后需要手动下载 `sndcpy.apk` 放到 `vendor/` 顶层：
+首次克隆后需要手动下载 `sndcpy.apk` 放到 `vendor/` 顶层（仓库不内置 APK 以避免版本陈旧）：
 
 ```bash
 # 从 rom1v/sndcpy releases 下载 sndcpy.apk
@@ -54,11 +54,18 @@ python -m unittest discover -s tests -v
 ## 运行测试
 
 ```bash
-# 全量测试
+# 全量单元测试（196 项）
 python -m unittest discover -s tests -v
 
 # 编译检查
-python -m compileall .\main.py .\core.py .\app .\tests
+python -m compileall main.py core.py app tests
+
+# 代码风格检查
+ruff check .
+ruff format --check .
+
+# 类型检查
+mypy app
 
 # 启动主程序
 python main.py
@@ -94,6 +101,7 @@ app/
 - **核心生命周期**：`CoreController` 的生命周期通过 `core_lifecycle_coordinator.py` 管理
 - **vendor 路径**：平台分流统一用 `path_resolver.py::get_platform_vendor_subdir()`，不在业务代码里重复 `sys.platform` 判断
 - **并发锁**：文件传输按设备分片锁，不使用全局锁
+- **常量**：端口、超时等运行时常量统一在 `app/infrastructure/config/constants.py` 中维护，不在业务代码中硬编码
 
 ### 提交规范
 
@@ -122,8 +130,8 @@ app/
 ```
 feat(ui): 设备列表项显示路由/录制状态指示器
 
-每台设备右侧显示音频(🎵)/视频(🎥)/录制(●)图标，
-通过 2 秒定时器 + 关键操作点延迟刷新保持状态同步。
+每台设备右侧显示音频 / 视频 / 录制图标，
+通过 2 秒定时器与关键操作点延迟刷新保持状态同步。
 ```
 
 ## 提交 Pull Request
@@ -137,6 +145,7 @@ feat(ui): 设备列表项显示路由/录制状态指示器
 2. **编写代码**，确保：
    - 通过全量测试（`python -m unittest discover -s tests -v`）
    - 通过编译检查（`python -m compileall`）
+   - 通过 `ruff check` 与 `ruff format --check`
    - 新功能有对应测试
    - 遵循架构约定和代码风格
 
