@@ -193,4 +193,4 @@ def _bind_console_page(window) -> None:
 
 def _resolve_logo_path(window) -> str:
     base_dir = getattr(window, "app_base_dir", os.path.abspath("."))
-    return os.path.join(base_dir, "logo", "ui_logo.png")
+    return os.path.join(base_dir, "logo", "ui_logo_1.png")

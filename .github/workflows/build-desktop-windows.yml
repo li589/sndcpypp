@@ -28,6 +28,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip install pillow
+
+      - name: Generate ICO from PNG
+        run: |
+          python -c "from PIL import Image; img = Image.open('logo/Sndcpy++_1.png'); img.save('logo/logo.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 
       - name: Run tests
         run: python -m unittest discover -s tests -v

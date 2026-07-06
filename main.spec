@@ -17,7 +17,7 @@ _platform_vendor_dir = os.path.join(_vendor_root, _platform_subdir)
 # 平台感知图标：Windows 用 .ico，macOS 用 .icns（由 CI 转换），Linux 无图标
 _icon = []
 if sys.platform == 'win32':
-    _icon = ['logo/logo (3).ico']
+    _icon = ['logo/logo.ico'] if os.path.isfile('logo/logo.ico') else []
 elif sys.platform == 'darwin':
     _icns_path = 'logo/logo.icns'
     if os.path.isfile(_icns_path):
