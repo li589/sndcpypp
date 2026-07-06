@@ -49,7 +49,7 @@ jobs:
           Compress-Archive -Path dist/sndcpypp.exe -DestinationPath "release/sndcpy++-windows-x64.zip" -Force
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sndcpy++-windows-x64.zip
           path: release/sndcpy++-windows-x64.zip

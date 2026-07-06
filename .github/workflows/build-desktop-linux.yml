@@ -50,7 +50,7 @@ jobs:
           ls -la release/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sndcpy++-linux-x64.zip
           path: release/sndcpy++-linux-x64.zip
