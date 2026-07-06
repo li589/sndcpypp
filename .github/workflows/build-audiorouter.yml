@@ -34,7 +34,7 @@ jobs:
             arch: arm64
             cmake-args: '-DCMAKE_OSX_ARCHITECTURES=arm64'
             artifact: AudioRouter-macos-arm64
-          - os: macos-13
+          - os: macos-latest
             arch: x64
             cmake-args: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
             artifact: AudioRouter-macos-x64
@@ -101,20 +101,10 @@ jobs:
           body: |
             ## sndcpy++ ${{ github.ref_name }}
 
-            Android 音频/视频转发与设备管理桌面应用，基于 PyQt6 + scrcpy + sndcpy.apk。
+            Android 设备音频/视频转发与管理的桌面应用，基于 PyQt6 + scrcpy + sndcpy.apk 构建。
 
-            ### 下载
+            ### 主要功能
 
-            | 平台 | sndcpy++ | AudioRouter |
-            |------|----------|-------------|
-            | Windows x64 | `sndcpy++-windows-x64.zip` | `AudioRouter-windows-x64.exe` |
-            | Windows x86 | — (PyQt6 无 32 位 wheels) | `AudioRouter-windows-x86.exe` |
-            | macOS Apple Silicon | `sndcpy++-macos-arm64.zip` | `AudioRouter-macos-arm64` |
-            | macOS Intel | `sndcpy++-macos-x64.zip` | `AudioRouter-macos-x64` |
-            | Linux x64 | `sndcpy++-linux-x64.zip` | `AudioRouter-linux-x64` |
-            | Linux ARM64 | `sndcpy++-linux-arm64.zip` | `AudioRouter-linux-arm64` |
-
-            ### 功能
             - 音频转发（sndcpy.apk + AudioRouter）
             - 视频镜像（scrcpy）
             - 文件管理（上传/下载/浏览）
@@ -122,9 +112,31 @@ jobs:
             - 设备状态实时监控
             - ADB 调试控制台
 
+            ### v1.0.0 改进
+
+            - 设备列表新增实时状态指示（音频/视频/录制）
+            - 文件传输支持并发与进度反馈，修复 root 文件识别
+            - 调试控制台 UI 优化（日志框可拖动、长设备名展示）
+            - 引入 ruff / mypy / pytest 工程标准，测试覆盖 196 项
+            - 修复代码审查发现的 14 项缺陷
+
+            ### 下载
+
+            | 平台 | sndcpy++ | AudioRouter |
+            |------|----------|-------------|
+            | Windows x64 | `sndcpy++-windows-x64.zip` | `AudioRouter-windows-x64.exe` |
+            | Windows x86 | — | `AudioRouter-windows-x86.exe` |
+            | macOS Apple Silicon | `sndcpy++-macos-arm64.zip` | `AudioRouter-macos-arm64` |
+            | macOS Intel | `sndcpy++-macos-x64.zip` | `AudioRouter-macos-x64` |
+            | Linux x64 | `sndcpy++-linux-x64.zip` | `AudioRouter-linux-x64` |
+            | Linux ARM64 | — | `AudioRouter-linux-arm64` |
+
+            > sndcpy++ 桌面端不提供 32 位包：上游 PyQt6 已停止发布 32 位 wheels，且 vendor 内置的 scrcpy 为 64 位二进制。AudioRouter 为 C++ 原生编译，仍提供 Windows x86 二进制。
+
             ### 使用方法
-            1. 下载对应平台的 sndcpy++ 压缩包
-            2. 解压并运行可执行文件
+
+            1. 下载对应平台的 sndcpy++ 压缩包并解压
+            2. 运行其中的可执行文件
             3. USB 连接 Android 设备（需开启 USB 调试）
             4. 在应用中选择设备并开始音频/视频转发
           generate_release_notes: false
