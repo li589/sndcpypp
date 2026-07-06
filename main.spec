@@ -74,5 +74,5 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
         name='sndcpypp.app',
-        icon=_icon if _icon else None,
+        icon=_icon[0] if _icon else None,
     )
