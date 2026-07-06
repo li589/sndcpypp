@@ -1,0 +1,65 @@
+name: Build Desktop App (Linux)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Build with PyInstaller
+        run: pyinstaller main.spec --clean --noconfirm
+
+      - name: Package artifact
+        run: |
+          mkdir -p release
+          cd dist && zip -r ../release/sndcpy++-linux-x64.zip sndcpypp && cd ..
+          ls -la release/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: sndcpy++-linux-x64.zip
+          path: release/sndcpy++-linux-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/sndcpy++-linux-x64.zip
+          name: sndcpy++ ${{ github.ref_name }}
+          generate_release_notes: false

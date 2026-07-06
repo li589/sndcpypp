@@ -11,8 +11,18 @@ permissions:
 
 jobs:
   build-macos:
-    name: Build macOS desktop package
-    runs-on: macos-latest
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+            asset-name: sndcpy++-macos-arm64.zip
+          - runner: macos-13
+            arch: x64
+            asset-name: sndcpy++-macos-x64.zip
 
     steps:
       - name: Checkout
@@ -56,14 +66,14 @@ jobs:
       - name: Package artifact
         run: |
           mkdir -p release
-          cd dist && zip -r ../release/sndcpypp-macos-arm64.zip sndcpypp.app && cd ..
+          cd dist && zip -r "../release/${{ matrix.asset-name }}" sndcpypp.app && cd ..
           ls -la release/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: sndcpypp-macos-arm64
-          path: release/sndcpypp-macos-arm64.zip
+          name: ${{ matrix.asset-name }}
+          path: release/${{ matrix.asset-name }}
           if-no-files-found: error
           retention-days: 30
 
@@ -71,6 +81,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/sndcpypp-macos-arm64.zip
+          files: release/${{ matrix.asset-name }}
           name: sndcpy++ ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
